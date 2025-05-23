@@ -10,14 +10,7 @@ rm -rf "$results"
 mkdir -p "$results"/{vinter_python,vinter_rust}
 
 test=test_hello-world
-vms=("vm_nova" "vm_pmfs")
-
-# Analysis with vinter_python
-for vm in "${vms[@]}"; do
-  echo "Running vinter_python with test $test on $vm..."
-  (cd "$results/vinter_python" && \
-    "$base/vinter_python/trace-and-analyze.sh" getting-started "$scriptdir/$vm.yaml" "$scriptdir/$test.yaml")
-done
+vms=("vm_nova")
 
 # Analysis with vinter_rust
 for vm in "${vms[@]}"; do
