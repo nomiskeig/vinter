@@ -1,3 +1,6 @@
 [submodule "panda"]
 	path = panda
 	url = https://github.com/KIT-OSGroup/panda
+[submodule "mpktracer"]
+	path = mpktracer
+	url = git@gitlab.kit.edu:upual/mpktracer.git
