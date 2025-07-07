@@ -4,6 +4,7 @@ members = [
 	"vinter_rust/vinter_trace",
 	"vinter_rust/vinter_trace2img",
 	"vinter_rust/vinter_report",
+	"vinter_rust/vinter_print_trace"
 ]
 exclude = [
 	# Needs to be built with musl.
@@ -12,3 +13,5 @@ exclude = [
 
 [profile.release]
 debug = true
+
+

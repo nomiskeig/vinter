@@ -8,3 +8,6 @@ anyhow = "1.0"
 bincode = "2.0.0-rc"
 hex = "0.4.3"
 snap = "1.0.5"
+
+[features]
+tracer_mpk = []

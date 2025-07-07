@@ -4,3 +4,6 @@
 [submodule "mpktracer"]
 	path = mpktracer
 	url = git@gitlab.kit.edu:upual/mpktracer.git
+[submodule "fs-testing/linux/nova"]
+	path = fs-testing/linux/nova
+	url = https://github.com/nomiskeig/linux-nova.git

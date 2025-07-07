@@ -16,5 +16,10 @@ ln -fsrt target/release vinter_rust/vinter_trace/vinter_trace.py
 # build hypercall
 (cd vinter_python && ./build_hypercall.sh)
 
+# build mpktracer
+#(cd mpktracer && ./compile.sh)
+
 # build initramfs
 make -C fs-testing/initramfs
+
+

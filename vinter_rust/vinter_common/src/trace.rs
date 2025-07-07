@@ -1,10 +1,20 @@
-use std::io::{BufRead, Read, Write};
+use std::io::{BufRead, Read, Seek, Write};
 
 use anyhow::{bail, Context, Result};
 use bincode::{Decode, Encode};
 
 const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
+#[repr(C)]
+pub struct MPKTraceEntry {
+    pub entry_type: u32,
+    pub mnemonic: u32,
+    pub id: u32,
+    pub non_temporal: u32,
+    pub value_size_and_location: u64,
+    pub value: u64,
+    pub address: u64,
+}
 #[derive(Debug, Default, Clone, Encode, Decode)]
 pub struct Metadata {
     /// current program counter
@@ -14,8 +24,8 @@ pub struct Metadata {
     /// kernel stack trace (frame pointer walk)
     pub kernel_stacktrace: Vec<u64>,
 }
-
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Encode)]
+#[cfg_attr(not(feature = "tracer_mpk"), derive(Decode))]
 pub enum TraceEntry {
     Write {
         id: usize,
@@ -49,11 +59,96 @@ pub enum TraceEntry {
     },
 }
 
+#[cfg(feature = "tracer_mpk")]
+impl ::bincode::Decode for TraceEntry {
+    fn decode<D: ::bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
+        let variant_index = <u32 as ::bincode::Decode>::decode(decoder)?;
+        let mnemonic = <u32 as ::bincode::Decode>::decode(decoder)?;
+        let id = <u32 as ::bincode::Decode>::decode(decoder)?;
+        let non_temporal = <u32 as ::bincode::Decode>::decode(decoder)?;
+        let value_size_and_location = <u64 as ::bincode::Decode>::decode(decoder)?;
+        let value = <u64 as ::bincode::Decode>::decode(decoder)?;
+        let address = <u64 as ::bincode::Decode>::decode(decoder)?;
+        let size = value_size_and_location >> 1;
+        // TODO: this is missing multiple thingies, like external values
+        match variant_index {
+            0u32 => Ok(Self::Write {
+                id: id as usize,
+                address: address as usize,
+                size: size as usize,
+                content: value.to_le_bytes().into_iter().take(size as usize).collect(),
+                non_temporal: false,
+                metadata: Metadata {
+                    pc: 0,
+                    in_kernel: false,
+                    kernel_stacktrace: vec![],
+                },
+            }),
+            1u32 => Ok(Self::Fence {
+                id: id as usize,
+                mnemonic: match mnemonic {
+                    1 => "sfence".to_string(),
+                    _ => "not implemented".to_string(),
+                },
+                metadata: Metadata {
+                    pc: 0,
+                    in_kernel: false,
+                    kernel_stacktrace: vec![],
+                },
+            }),
+            2u32 => Ok(Self::Flush {
+                id: id as usize ,
+                mnemonic: match mnemonic {
+                    1 => "clwb".to_string(),
+                    _ => "not implemented".to_string(),
+                },
+                address: address as usize,
+                metadata: Metadata {
+                    pc: 0,
+                    in_kernel: false,
+                    kernel_stacktrace: vec![],
+                },
+            }),
+            3u32 => Ok(Self::Read {
+                id: id as usize ,
+                address: address as usize,
+                size: size as usize,
+                content: value.to_le_bytes().into_iter().take(size as usize).collect(),
+            }),
+            4u32 => Ok(Self::Hypercall {
+                id: id as usize,
+                action: "checkpoint".to_string(),
+                value: "0".to_string(),
+            }),
+            variant => Err(::bincode::error::DecodeError::UnexpectedVariant {
+                found: variant,
+                type_name: "TraceEntrySelf",
+                allowed: ::bincode::error::AllowedEnumVariants::Range { min: 0, max: 4 },
+            }),
+        }
+    }
+}
+
 impl TraceEntry {
+    #[cfg(not(feature = "tracer_mpk"))]
     pub fn decode_from_std_read<R: std::io::Read>(
         src: &mut R,
     ) -> std::result::Result<TraceEntry, bincode::error::DecodeError> {
         bincode::decode_from_std_read(src, BINCODE_CONFIG)
+    }
+    #[cfg(feature = "tracer_mpk")]
+    pub fn decode_from_std_read<R: std::io::Read>(
+        src: &mut R,
+    ) -> std::result::Result<TraceEntry, bincode::error::DecodeError> {
+        //return decode_mpk_entry(src);
+        bincode::decode_from_std_read(
+            src,
+            bincode::config::standard()
+                .with_little_endian()
+                .with_fixed_int_encoding(),
+        )
     }
 
     pub fn encode_into_std_write<W: std::io::Write>(
@@ -75,6 +170,7 @@ fn lift_option<T>(r: Result<Option<T>>) -> Option<Result<T>> {
 
 pub struct BinTraceIterator<R: Read> {
     file: R,
+    amount: i64,
 }
 
 impl<R: Read> Iterator for BinTraceIterator<R> {
@@ -82,11 +178,25 @@ impl<R: Read> Iterator for BinTraceIterator<R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         use bincode::error::DecodeError;
-        match TraceEntry::decode_from_std_read(&mut self.file) {
-            Ok(e) => Some(Ok(e)),
-            Err(DecodeError::UnexpectedEnd) => None,
-            Err(e) => Some(Err(e.into())),
-        }
+        match self.amount > 0 || self.amount <= -1 {
+            true => {
+                self.amount -= 1;
+                return match TraceEntry::decode_from_std_read(&mut self.file) {
+                    Ok(e) => {
+                        Some(Ok(e))
+                    }
+                    Err(DecodeError::UnexpectedEnd) => {
+                        print!("found unexepcted end\n");
+                        None
+                    }
+                    Err(e) => {
+                        print!("got an error:\n");
+                        Some(Err(e.into()))
+                    }
+                };
+            }
+            false => return None,
+        };
     }
 }
 
@@ -97,13 +207,29 @@ pub fn new_trace_writer_bin<W: Write>(file: W) -> TraceWriter<W> {
     snap::write::FrameEncoder::new(file)
 }
 
+#[cfg(not(feature = "tracer_mpk"))]
 /// Parse a binary trace file.
 pub fn parse_trace_file_bin<R: BufRead>(file: R) -> BinTraceIterator<snap::read::FrameDecoder<R>> {
     BinTraceIterator {
         file: snap::read::FrameDecoder::new(file),
+        amount: -1,
     }
 }
 
+#[cfg(feature = "tracer_mpk")]
+pub fn parse_trace_file_bin<R: BufRead>(mut file: R) -> BinTraceIterator<R> {
+    let mut buf = [0u8; 64];
+    file.read_exact(&mut buf);
+    let amount = u64::from_le_bytes(buf[8..16].try_into().unwrap());
+
+    println!("amount {}", amount);
+
+    print!("is in parse_trace_file_bin, buff: {:?}\n", buf);
+    BinTraceIterator {
+        file,
+        amount: amount as i64,
+    }
+}
 /// Parse a textual trace file.
 pub fn parse_trace_file_text(file: impl BufRead) -> impl Iterator<Item = Result<TraceEntry>> {
     file.lines().enumerate().filter_map(move |(id, line)| {
