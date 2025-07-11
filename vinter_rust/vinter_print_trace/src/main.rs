@@ -67,7 +67,7 @@ fn main() -> Result<()> {
                 address,
                 ..
             }) => {
-                write!(&mut writer, "Flush, ID: {}, mnemonic: {}\n", id, mnemonic);
+                write!(&mut writer, "Flush, ID: {}, mnemonic: {}, address {:x?}\n", id, mnemonic, address);
             }
             Ok(TraceEntry::Hypercall { id, action, value }) => {
                 write!(
