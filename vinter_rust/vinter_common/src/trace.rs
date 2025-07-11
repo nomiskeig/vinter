@@ -2,6 +2,8 @@ use std::io::{BufRead, Read, Seek, Write};
 
 use anyhow::{bail, Context, Result};
 use bincode::{Decode, Encode};
+use std::cell::RefCell;
+use std::sync::Mutex;
 
 const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
@@ -58,34 +60,113 @@ pub enum TraceEntry {
         value: String,
     },
 }
+struct DecodeState {
+    remaining: usize,
+    base_address: u64,
+    rep_size: u32,
+    count: usize,
+    offset: usize,
+    value: u64,
+    last_id: u32,
+}
+struct TotalState {
+    total_expectd: i64,
+}
+fn create_rep_write(mut state: std::sync::MutexGuard<'_, DecodeState>) -> TraceEntry {
+    state.remaining -= 1;
+    state.offset += 1;
+    state.count += 1;
 
-#[cfg(feature = "tracer_mpk")]
+
+    return TraceEntry::Write {
+        id: (state.last_id + (state.offset - 1) as u32) as usize,
+        address: (state.base_address + (state.count as u32 * state.rep_size) as u64) as usize,
+        size: state.rep_size as usize,
+        content: state
+            .value
+            .to_le_bytes()
+            .into_iter()
+            .take(state.rep_size as usize)
+            .collect(),
+        non_temporal: true,
+        metadata: Metadata {
+            pc: 0,
+            in_kernel: false,
+            kernel_stacktrace: vec![],
+        },
+    };
+}
+
+static decode_state: Mutex<DecodeState> = Mutex::new(DecodeState {
+    remaining: 0,
+    count: 0,
+    offset: 0,
+    rep_size: 0,
+    base_address: 0,
+    last_id: 0,
+    value: 0,
+});
+static total_expected: Mutex<TotalState> = Mutex::new(TotalState { total_expectd: 0 });
+//#[cfg(feature = "tracer_mpk")]
 impl ::bincode::Decode for TraceEntry {
     fn decode<D: ::bincode::de::Decoder>(
         decoder: &mut D,
     ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
+        let mut state = decode_state.lock().unwrap();
+        if state.remaining > 0 {
+            return Ok(create_rep_write(state));
+        }
         let variant_index = <u32 as ::bincode::Decode>::decode(decoder)?;
         let mnemonic = <u32 as ::bincode::Decode>::decode(decoder)?;
-        let id = <u32 as ::bincode::Decode>::decode(decoder)?;
+        let decoded_id = <u32 as ::bincode::Decode>::decode(decoder)?;
         let non_temporal = <u32 as ::bincode::Decode>::decode(decoder)?;
         let value_size_and_location = <u64 as ::bincode::Decode>::decode(decoder)?;
         let value = <u64 as ::bincode::Decode>::decode(decoder)?;
         let address = <u64 as ::bincode::Decode>::decode(decoder)?;
+        let flags = <u64 as ::bincode::Decode>::decode(decoder)?;
         let size = value_size_and_location >> 1;
+        let mut id = decoded_id + state.offset as u32 ;
+
         // TODO: this is missing multiple thingies, like external values
+        // // this creates multiple entries from a rep isntruction
+        if flags & (0x1 << 2) != 0x0 {
+            print!("found flag with size {}\n", size);
+            state.remaining = size as usize;
+            total_expected.lock().unwrap().total_expectd += size as i64 - 1 as i64;
+            state.last_id = id;
+            state.count = 0;
+            state.offset = 0;
+            state.value = value;
+            state.base_address = address;
+            state.rep_size = match flags & 0x3 {
+                0 => 1,
+                1 => 2,
+                2 => 4,
+                3 => 8,
+                _ => 0, // Err(::bincode::error::DecodeError::OtherString("found unhandled rep_size".to_string());
+            }
+        }
+        if state.remaining > 0 {
+            return Ok(create_rep_write(state));
+        }
         match variant_index {
-            0u32 => Ok(Self::Write {
+            0u32 => {
+                Ok(Self::Write {
                 id: id as usize,
                 address: address as usize,
                 size: size as usize,
-                content: value.to_le_bytes().into_iter().take(size as usize).collect(),
+                content: value
+                    .to_le_bytes()
+                    .into_iter()
+                    .take(size as usize)
+                    .collect(),
                 non_temporal: false,
                 metadata: Metadata {
                     pc: 0,
                     in_kernel: false,
                     kernel_stacktrace: vec![],
                 },
-            }),
+            })},
             1u32 => Ok(Self::Fence {
                 id: id as usize,
                 mnemonic: match mnemonic {
@@ -99,7 +180,7 @@ impl ::bincode::Decode for TraceEntry {
                 },
             }),
             2u32 => Ok(Self::Flush {
-                id: id as usize ,
+                id: id as usize,
                 mnemonic: match mnemonic {
                     1 => "clwb".to_string(),
                     _ => "not implemented".to_string(),
@@ -112,10 +193,14 @@ impl ::bincode::Decode for TraceEntry {
                 },
             }),
             3u32 => Ok(Self::Read {
-                id: id as usize ,
+                id: id as usize,
                 address: address as usize,
                 size: size as usize,
-                content: value.to_le_bytes().into_iter().take(size as usize).collect(),
+                content: value
+                    .to_le_bytes()
+                    .into_iter()
+                    .take(size as usize)
+                    .collect(),
             }),
             4u32 => Ok(Self::Hypercall {
                 id: id as usize,
@@ -170,7 +255,6 @@ fn lift_option<T>(r: Result<Option<T>>) -> Option<Result<T>> {
 
 pub struct BinTraceIterator<R: Read> {
     file: R,
-    amount: i64,
 }
 
 impl<R: Read> Iterator for BinTraceIterator<R> {
@@ -178,13 +262,12 @@ impl<R: Read> Iterator for BinTraceIterator<R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         use bincode::error::DecodeError;
-        match self.amount > 0 || self.amount <= -1 {
+        match total_expected.lock().unwrap().total_expectd > 0 || total_expected.lock().unwrap().total_expectd <= -1 {
             true => {
-                self.amount -= 1;
+                {}
+                total_expected.lock().unwrap().total_expectd -= 1;
                 return match TraceEntry::decode_from_std_read(&mut self.file) {
-                    Ok(e) => {
-                        Some(Ok(e))
-                    }
+                    Ok(e) => Some(Ok(e)),
                     Err(DecodeError::UnexpectedEnd) => {
                         print!("found unexepcted end\n");
                         None
@@ -212,11 +295,10 @@ pub fn new_trace_writer_bin<W: Write>(file: W) -> TraceWriter<W> {
 pub fn parse_trace_file_bin<R: BufRead>(file: R) -> BinTraceIterator<snap::read::FrameDecoder<R>> {
     BinTraceIterator {
         file: snap::read::FrameDecoder::new(file),
-        amount: -1,
     }
 }
 
-#[cfg(feature = "tracer_mpk")]
+//#[cfg(feature = "tracer_mpk")]
 pub fn parse_trace_file_bin<R: BufRead>(mut file: R) -> BinTraceIterator<R> {
     let mut buf = [0u8; 64];
     file.read_exact(&mut buf);
@@ -225,10 +307,11 @@ pub fn parse_trace_file_bin<R: BufRead>(mut file: R) -> BinTraceIterator<R> {
     println!("amount {}", amount);
 
     print!("is in parse_trace_file_bin, buff: {:?}\n", buf);
-    BinTraceIterator {
-        file,
-        amount: amount as i64,
+    {
+        total_expected.lock().unwrap().total_expectd = amount as i64;
     }
+
+    BinTraceIterator { file }
 }
 /// Parse a textual trace file.
 pub fn parse_trace_file_text(file: impl BufRead) -> impl Iterator<Item = Result<TraceEntry>> {

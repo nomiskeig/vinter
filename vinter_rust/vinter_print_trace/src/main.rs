@@ -21,7 +21,6 @@ fn main() -> Result<()> {
 
     let f2 = File::create(args.outputFile).context("could not open trace file")?;
     let mut writer = BufWriter::new(f2);
-    print!("test1\n");
     for entry in trace::parse_trace_file_bin(reader).map(move |entry| {
         match &entry {
             Ok(TraceEntry::Write {
