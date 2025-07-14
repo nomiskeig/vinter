@@ -14,7 +14,8 @@ cd "$results"
 for i in {0..20} ; do # perform 21 runs (first will be discarded)
 	echo "== Performing benchmark run $i/20"
 	sleep 10 # Add some delays between tests to make hardware timings more deterministic
-	"$base/vinter_python/trace-and-analyze.sh" "paper-benchmark_run-$i" "$scriptdir/vm_nova.yaml" "$scriptdir/test_hello-world.yaml" > /dev/null
+#	"$base/vinter_python/trace-and-analyze.sh" "paper-benchmark_run-$i" "$scriptdir/vm_nova.yaml" "$scriptdir/test_hello-world.yaml" > /dev/null
+	"$base/target/release/vinter_trace2img" analyze --output-dir "paper-benchmark_run-$i" "$scriptdir/vm_nova.yaml" "$scriptdir/test_hello-world.yaml" > /dev/null
 done
 
 cd vm_nova
