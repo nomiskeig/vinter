@@ -1,9 +1,6 @@
 [submodule "panda"]
 	path = panda
 	url = https://github.com/KIT-OSGroup/panda
-[submodule "mpktracer"]
-	path = mpktracer
-	url = git@gitlab.kit.edu:upual/mpktracer.git
 [submodule "fs-testing/linux/nova"]
 	path = fs-testing/linux/nova
 	url = https://github.com/nomiskeig/linux-nova.git
