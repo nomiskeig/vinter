@@ -107,7 +107,7 @@ static decode_state: Mutex<DecodeState> = Mutex::new(DecodeState {
     value: 0,
 });
 static total_expected: Mutex<TotalState> = Mutex::new(TotalState { total_expectd: 0 });
-//#[cfg(feature = "tracer_mpk")]
+#[cfg(feature = "tracer_mpk")]
 impl ::bincode::Decode for TraceEntry {
     fn decode<D: ::bincode::de::Decoder>(
         decoder: &mut D,
@@ -293,12 +293,16 @@ pub fn new_trace_writer_bin<W: Write>(file: W) -> TraceWriter<W> {
 #[cfg(not(feature = "tracer_mpk"))]
 /// Parse a binary trace file.
 pub fn parse_trace_file_bin<R: BufRead>(file: R) -> BinTraceIterator<snap::read::FrameDecoder<R>> {
+    {
+        total_expected.lock().unwrap().total_expectd = -1 as i64;
+    }
+
     BinTraceIterator {
         file: snap::read::FrameDecoder::new(file),
     }
 }
 
-//#[cfg(feature = "tracer_mpk")]
+#[cfg(feature = "tracer_mpk")]
 pub fn parse_trace_file_bin<R: BufRead>(mut file: R) -> BinTraceIterator<R> {
     let mut buf = [0u8; 64];
     file.read_exact(&mut buf);

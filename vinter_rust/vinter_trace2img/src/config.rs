@@ -16,6 +16,8 @@ pub struct VM {
     pub qemu_args: Vec<String>,
     /// path to Linux kernel System.map file
     pub system_map: String,
+    pub kernel: String,
+    pub initrd: String
 }
 
 /// Format of the VM configuration file.

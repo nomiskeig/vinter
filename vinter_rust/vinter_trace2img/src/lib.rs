@@ -1,8 +1,9 @@
+use core::time;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
@@ -10,6 +11,9 @@ use std::rc::Rc;
 use anyhow::{anyhow, bail, Context, Result};
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
+use std::fs::OpenOptions;
+
+use nix::unistd;
 
 use vinter_common::trace::{self, TraceEntry};
 
@@ -306,6 +310,7 @@ impl HeuristicCrashImageGenerator {
     }
 
     /// Start a VM and trace test execution.
+    #[cfg(not(feature = "tracer_mpk"))]
     pub fn trace_pre_failure(&self) -> Result<()> {
         let cmd = format!("cat /proc/uptime; cat /proc/uptime; cat /proc/uptime; {prefix} && {suffix} && hypercall success; cat /proc/uptime",
             prefix = self.vm_config.commands.get("trace_cmd_prefix").ok_or_else(|| anyhow!("missing trace_cmd_prefix in VM configuration"))?,
@@ -324,9 +329,88 @@ impl HeuristicCrashImageGenerator {
             .stderr(self.log.try_clone()?)
             .stdout(self.log.try_clone()?)
             .status()?;
+
         if !status.success() {
             bail!("pre-failure tracing failed with status {}", status);
         }
+
+        Ok(())
+    }
+    #[cfg(feature = "tracer_mpk")]
+    pub fn trace_pre_failure(&self) -> Result<()> {
+        let cmd = format!("cat /proc/uptime; cat /proc/uptime; cat /proc/uptime; {prefix} && {suffix} && hypercall success; cat /proc/uptime",
+            prefix = self.vm_config.commands.get("trace_cmd_prefix").ok_or_else(|| anyhow!("missing trace_cmd_prefix in VM configuration"))?,
+            suffix = self.test_config.trace_cmd_suffix);
+        println!("executing trace_pre_failure, {}", self.output_dir.display());
+        //let com = format!("pwd && mkfifo {in}",in = self.output_dir.join("guest.in").display());
+        //   println!("{}", com);
+        //Command::new(com).status()?;
+        //let vm = Command::new("qemu-system-x86_64").stderr(self.log.try_clone()?).stdout(self.log.try_clone()?);
+        unistd::mkfifo(
+            &self.output_dir.join("guest.out"),
+            nix::sys::stat::Mode::S_IRWXU,
+        )?;
+        unistd::mkfifo(
+            &self.output_dir.join("guest.in"),
+            nix::sys::stat::Mode::S_IRWXU,
+        )?;
+        let vm = Command::new("qemu-system-x86_64")
+            .args(["-display", "none"])
+            .args(["-kernel", &self.vm_config.vm.kernel])
+            .args(["-initrd", &self.vm_config.vm.initrd])
+            .args(["-m", &self.vm_config.vm.mem])
+            .args(&self.vm_config.vm.qemu_args)
+            //.args(["-append", "console=ttyS0"])
+            .args([
+                "-serial",
+                &format!("pipe:{}/guest", self.output_dir.display()),
+            ])
+            .stderr(self.log.try_clone()?)
+            .stdout(self.log.try_clone()?)
+            .spawn()
+            .expect("spwan vm");
+        // we spawn the vm, then wait for it to have booted and afterwad
+        let out_file = File::open(&format!("{}/guest.out", self.output_dir.display()))
+            .context("failed to open file")?;
+        let reader = BufReader::new(out_file);
+        for line in reader.lines() {
+            let line = line?;
+            println!("Line: {}", line);
+            if line.starts_with("Successfully booted vm") {
+                break;
+            }
+        }
+        //std::thread::sleep(time::Duration::from_secs(4));
+
+        // this is ignored by the vm for some reason, so we use an external bash script instead
+        /*let in_file = File::open(&format!("{}/guest.in", self.output_dir.display()))
+                    .context("failed to open in file")?;
+                let mut writer = BufWriter::new(in_file);
+                write!(&mut writer, "ls\r\n")?;
+                writer.flush();
+
+        */
+        Command::new(adjacent_file(OsStr::new("send_to_vm.sh")).unwrap())
+            .arg(&format!(
+                "{}/guest.in",
+                std::fs::canonicalize(&format!("{}", self.output_dir.display()))
+                    .unwrap()
+                    .display()
+            ))
+            .arg(cmd)
+            .status()?;
+        let out_file2 = File::open(&format!("{}/guest.out", self.output_dir.display()))
+            .context("failed to open file")?;
+        let reader = BufReader::new(out_file2);
+        for line in reader.lines() {
+            let line = line?;
+            println!("Line: {}", line);
+            if line.starts_with("Successfully booted vm") {
+                break;
+            }
+        }
+        Command::new("pwd").status()?;
+
         Ok(())
     }
 
