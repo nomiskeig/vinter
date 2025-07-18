@@ -10,7 +10,8 @@ rm -rf "$results"
 mkdir -p "$results"/{vinter_python,vinter_rust}
 
 test=test_hello-world
-vms=("vm_nova")
+#vms=("vm_nova")
+vms=("vm_MPKTracerNOVA")
 
 # Analysis with vinter_rust
 for vm in "${vms[@]}"; do

@@ -5,12 +5,35 @@ INITRAMFS_DEPS := \
 	../../vinter_python/hypercall \
 	../fs-dump/target/x86_64-unknown-linux-musl/release/fs-dump
 
-default: initramfs.cpio.gz initramfs_pmfs.cpio.gz
+MPK_DEPS := \
+	../../MPKTracer/out/hypercall_mpk \
+	../../MPKTracer/out/libZydis.so.4-no_libc \
+	../../MPKTracer/out/starter \
+	../../MPKTracer/out/tracer_preload.so.1 \
+	../../MPKTracer/kernel/tracer_module/tracer_module_vinter.ko
+	
+
+PWD := $(CURDIR)
+default: initramfs.cpio.gz initramfs_pmfs.cpio.gz initramfs_mpk.cpio.gz
 .PHONY: default
 
-initramfs.cpio.gz: $(INITRAMFS_DEPS)
+../../MPKTracer/kernel/tracer_module/tracer_module_vinter.ko:
+	(cd ../../MPKTracer/kernel/tracer_module/ && MODULE_NAME=tracer_module_vinter KERNEL_DIR="$(PWD)/../linux/MPKTracerNova_build" make)
+
+initramfs.cpio.gz: $(INITRAMFS_DEPS) 
 	./create-initramfs.sh > $@
 	
+initramfs_mpk.cpio.gz: $(INITRAMFS_DEPS) $(MPK_DEPS)
+	mkdir -p mpk/{bin,lib}
+	./copy-binary.sh ../../MPKTracer/out/hypercall_mpk mpk
+	./copy-binary.sh ../../MPKTracer/out/libZydis.so.4-no_libc mpk
+	./copy-binary.sh ../../MPKTracer/out/starter mpk
+	./copy-binary.sh ../../MPKTracer/out/tracer_preload.so.1 mpk
+	cp ../../MPKTracer/kernel/tracer_module/tracer_module_vinter.ko mpk/bin/tracer_module.ko
+	cp /usr/bin/ld.so mpk/lib
+	cp /usr/bin/ldd mpk
+	./create-initramfs.sh mpk > $@
+
 # Newer busybox does not work with the old PMFS kernel.
 initramfs_pmfs.cpio.gz: $(INITRAMFS_DEPS) busybox_pmfs
 	BUSYBOX=./busybox_pmfs ./create-initramfs.sh > $@

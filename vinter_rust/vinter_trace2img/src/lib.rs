@@ -336,7 +336,7 @@ impl HeuristicCrashImageGenerator {
 
         Ok(())
     }
-    #[cfg(feature = "tracer_mpk")]
+    //#[cfg(feature = "tracer_mpk")]
     pub fn trace_pre_failure(&self) -> Result<()> {
         let cmd = format!("cat /proc/uptime; cat /proc/uptime; cat /proc/uptime; {prefix} && {suffix} && hypercall success; cat /proc/uptime",
             prefix = self.vm_config.commands.get("trace_cmd_prefix").ok_or_else(|| anyhow!("missing trace_cmd_prefix in VM configuration"))?,
@@ -354,11 +354,15 @@ impl HeuristicCrashImageGenerator {
             &self.output_dir.join("guest.in"),
             nix::sys::stat::Mode::S_IRWXU,
         )?;
+        //Command::new("rm /var/tmp/vinter.qcow2").status();
+        //Command::new("qemu-img create -f qcow2 /var/tmp/vinter.qcow2").status()?;
         let vm = Command::new("qemu-system-x86_64")
             .args(["-display", "none"])
             .args(["-kernel", &self.vm_config.vm.kernel])
             .args(["-initrd", &self.vm_config.vm.initrd])
-            .args(["-m", &self.vm_config.vm.mem])
+          //  .args(["-drive", "if=virtio,format=qcow2,file=/var/tmp/vinter.qcow2"])
+            //.args(["-m", &format!("{},maxmem=4G",&self.vm_config.vm.mem)])
+            .args(["-m", "5G,maxmem=20G"])
             .args(&self.vm_config.vm.qemu_args)
             //.args(["-append", "console=ttyS0"])
             .args([

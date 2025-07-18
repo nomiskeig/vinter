@@ -9,5 +9,5 @@ if [ -d /init.d ]; then
     . "$f"
   done
 fi
-
+echo "Successfully booted vm"
 exec /bin/sh

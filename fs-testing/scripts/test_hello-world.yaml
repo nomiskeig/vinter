@@ -1,3 +1,12 @@
-trace_cmd_suffix: "hypercall checkpoint 0 && sync && hypercall checkpoint 1 && echo HelloWorld > /mnt/myfile && hypercall checkpoint 2 && sync && hypercall checkpoint 3"
+#trace_cmd_suffix: "hypercall checkpoint 0 && sync && hypercall checkpoint 1 && echo HelloWorld > /mnt/myfile && hypercall checkpoint 2 && sync && hypercall checkpoint 3"
+#trace_cmd_suffix: "/bin/hypercall_mpk && echo after"
+#trace_cmd_suffix: "/lib/ld-linux-x86-64.so.2 --library-path /lib /bin/hello_world.sh"
+trace_cmd_suffix: "/lib/ld-linux-x86-64.so.2 --library-path /lib /bin/starter /bin/hello_world.sh"
+
+#trace_cmd_suffix: "ls /bin" 
+#trace_cmd_suffix: "cat /dev/pmem* && dmesg"
+#trace_cmd_suffix: " fdisk -l /dev/pmem0"
+#trace_cmd_suffix: "cp /bin/starter /bin/test_starter && ls -all /bin/ && /bin/test_starter"
+#trace_cmd_suffix: "/bin/hello_world.sh"
 checkpoint_range: [1, 3]
 dump_cmd_suffix: "echo test >> /mnt/myfile && rm /mnt/myfile"

@@ -17,6 +17,10 @@ mkdir -p initramfs/{bin,mnt,proc,sys}
 cp init initramfs
 "${BUSYBOX:-./busybox}" --install initramfs/bin
 cp ../../vinter_python/hypercall initramfs/bin
+cp ./hello_world.sh initramfs/bin
+# we need to build the tracer module again the kernel here, we do that in the makefile
+#cp ../../MPKTracer/out/tracer_module.ko initramfs/bin
+
 cp ../fs-dump/target/x86_64-unknown-linux-musl/release/fs-dump initramfs/bin
 
 (cd initramfs && find . -print0 | cpio --owner root:root --null -ov --format=newc | gzip -9)
