@@ -137,7 +137,7 @@ impl X86PersistentMemory {
 
     pub fn write(&mut self, address: usize, value: &[u8], non_temporal: bool, metadata: &Metadata) {
         // test to see if we even get larger stores
-        assert!(matches!(value.len(), 1 | 2 | 4 | 8));
+        assert!(matches!(value.len(), 1 | 2 | 4 | 8), "{}", format!("size didnt match, received {}", value.len()));
         let address_stop = address + value.len();
         let split_address_ranges = {
             let start = address - address % 8;

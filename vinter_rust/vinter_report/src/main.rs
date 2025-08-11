@@ -96,7 +96,7 @@ fn main() -> Result<()> {
                 None
             };
             let mut file = BufReader::new(File::open(&trace).context("could not open trace file")?);
-            for entry in trace::parse_trace_file_bin(&mut file).skip(skip.unwrap_or(0)) {
+            for entry in trace::parse_trace_file_bin_panda(&mut file).skip(skip.unwrap_or(0)) {
                 let entry = entry?;
                 println!("{:?}", entry);
 

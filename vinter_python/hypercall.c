@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
 	}
 
 	int ret = hypercall(argv[1], argc == 3 ? argv[2] : "");
-	//printf("hypercall returned %d\n", ret);
 
-	return ret;
+	//return ret;
+	return 0;
 }

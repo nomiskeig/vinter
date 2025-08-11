@@ -96,13 +96,14 @@ fn main() -> Result<()> {
                 fences_with_writes,
                 gen.crash_images.len()
             );
-            println!("Extracing semantic states...");
+            /*println!("Extracing semantic states...");
             gen.extract_semantic_states()
                 .context("semantic state extraction failed")?;
             println!(
                 "State extraction finished. {} unique states",
                 gen.semantic_states.len()
             );
+*/
         }
     }
     Ok(())

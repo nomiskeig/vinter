@@ -24,13 +24,26 @@ initramfs.cpio.gz: $(INITRAMFS_DEPS)
 	./create-initramfs.sh > $@
 	
 initramfs_mpk.cpio.gz: $(INITRAMFS_DEPS) $(MPK_DEPS)
-	mkdir -p mpk/{bin,lib}
+	mkdir -p mpk/{bin,lib,lib64}
+	
 	./copy-binary.sh ../../MPKTracer/out/hypercall_mpk mpk
 	./copy-binary.sh ../../MPKTracer/out/libZydis.so.4-no_libc mpk
 	./copy-binary.sh ../../MPKTracer/out/starter mpk
 	./copy-binary.sh ../../MPKTracer/out/tracer_preload.so.1 mpk
+	cp /usr/bin/sh /tmp/sh_dynamic
+	./copy-binary.sh /tmp/sh_dynamic mpk
+	cp /usr/bin/mount /tmp/mount_dynamic
+	./copy-binary.sh /tmp/mount_dynamic mpk
+	./copy-binary.sh /usr/bin/perf mpk
+	# copy over these libs into lib64 because the linker/shell requires them there
+	cp mpk/lib/libtinfo.so.6 mpk/lib64
+	cp mpk/lib/libc.so.6 mpk/lib64
+
 	cp ../../MPKTracer/kernel/tracer_module/tracer_module_vinter.ko mpk/bin/tracer_module.ko
 	cp /usr/bin/ld.so mpk/lib
+	cp /usr/bin/echo /tmp/echo_dynamic # this should replacse the statically linked version with a dynamically linked one so that we can use LD_PRELOAD
+	cp /tmp/echo_dynamic mpk/bin
+	cp /usr/bin/sync mpk/bin/sync_dynamic
 	cp /usr/bin/ldd mpk
 	./create-initramfs.sh mpk > $@
 

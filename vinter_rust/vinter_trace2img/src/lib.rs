@@ -7,6 +7,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
+use std::time::Instant;
 
 use anyhow::{anyhow, bail, Context, Result};
 use itertools::Itertools;
@@ -42,7 +43,17 @@ impl MemoryReplayer {
         file: impl BufRead + 'a,
     ) -> impl Iterator<Item = Result<trace::TraceEntry>> + 'a {
         let mut deferred_fence = false;
-        trace::parse_trace_file_bin(file).map(move |entry| {
+        let entries;
+        #[cfg(feature = "tracer_mpk")]
+        {
+            entries = trace::parse_trace_file_bin_mpk(file)
+        }
+        #[cfg(not(feature = "tracer_mpk"))]
+        {
+            entries = trace::parse_trace_file_bin_panda(file)
+        }
+
+        entries.map(move |entry| {
             if deferred_fence {
                 self.mem.borrow_mut().fence();
                 deferred_fence = false;
@@ -56,6 +67,10 @@ impl MemoryReplayer {
                     non_temporal,
                     metadata,
                 }) => {
+                    if content.len() == 0 {
+                        println!("write: {:?}", entry);
+
+                    }
                     self.mem
                         .borrow_mut()
                         .write(*address, content, *non_temporal, metadata);
@@ -315,6 +330,8 @@ impl HeuristicCrashImageGenerator {
         let cmd = format!("cat /proc/uptime; cat /proc/uptime; cat /proc/uptime; {prefix} && {suffix} && hypercall success; cat /proc/uptime",
             prefix = self.vm_config.commands.get("trace_cmd_prefix").ok_or_else(|| anyhow!("missing trace_cmd_prefix in VM configuration"))?,
             suffix = self.test_config.trace_cmd_suffix);
+        let mut start = Instant::now();
+
         let status = trace_command()?
             .arg("--qcow")
             .arg(self.output_dir.join("img.qcow2"))
@@ -330,15 +347,17 @@ impl HeuristicCrashImageGenerator {
             .stdout(self.log.try_clone()?)
             .status()?;
 
+                let elapsed = start.elapsed();
+                println!("Time for tracing original: {} ms", elapsed.as_millis());
         if !status.success() {
             bail!("pre-failure tracing failed with status {}", status);
         }
 
         Ok(())
     }
-    //#[cfg(feature = "tracer_mpk")]
+   //#[cfg(feature = "tracer_mpk")]
     pub fn trace_pre_failure(&self) -> Result<()> {
-        let cmd = format!("cat /proc/uptime; cat /proc/uptime; cat /proc/uptime; {prefix} && {suffix} && hypercall success; cat /proc/uptime",
+        let cmd = format!("cat /proc/uptime; cat /proc/uptime; cat /proc/uptime; {prefix} && {suffix} && hypercall success; cat /proc/uptime" ,
             prefix = self.vm_config.commands.get("trace_cmd_prefix").ok_or_else(|| anyhow!("missing trace_cmd_prefix in VM configuration"))?,
             suffix = self.test_config.trace_cmd_suffix);
         println!("executing trace_pre_failure, {}", self.output_dir.display());
@@ -356,23 +375,45 @@ impl HeuristicCrashImageGenerator {
         )?;
         //Command::new("rm /var/tmp/vinter.qcow2").status();
         //Command::new("qemu-img create -f qcow2 /var/tmp/vinter.qcow2").status()?;
+        let mut start = Instant::now();
+        let mut start2 = Instant::now();
+
         let vm = Command::new("qemu-system-x86_64")
             .args(["-display", "none"])
             .args(["-kernel", &self.vm_config.vm.kernel])
             .args(["-initrd", &self.vm_config.vm.initrd])
-          //  .args(["-drive", "if=virtio,format=qcow2,file=/var/tmp/vinter.qcow2"])
+            .args([
+                "-virtfs",
+                &format!(
+                    "local,path={},mount_tag=shared,security_model=mapped-xattr",
+                    self.output_dir.display()
+                ),
+            ])
+            //  .args(["-drive", "if=virtio,format=qcow2,file=/var/tmp/vinter.qcow2"])
             //.args(["-m", &format!("{},maxmem=4G",&self.vm_config.vm.mem)])
-            .args(["-m", "5G,maxmem=20G"])
+            //.args(["-s", "-S"])
+            .args(["-m", "8G,maxmem=20G,slots=1"])
+            .args(["-enable-kvm"])
             .args(&self.vm_config.vm.qemu_args)
             //.args(["-append", "console=ttyS0"])
             .args([
                 "-serial",
                 &format!("pipe:{}/guest", self.output_dir.display()),
             ])
+            //.args(["-object", "memory-backend-file,size=256M,id=m0,mem-path=/tmp/test.txt, share=on"])
+            //.args(["-device", "nvdimm,id=nvdimm1,memdev=m0,label-size=2M"])
+            .args([
+                "-object",
+                &format!(
+                    "memory-backend-file,id=mem1,share,mem-path={},size=5M",
+                    self.output_dir.join("final.img").display()
+                ),
+            ])
+            .args(["-device", "virtio-pmem-pci,memdev=mem1,id=nv1"])
             .stderr(self.log.try_clone()?)
             .stdout(self.log.try_clone()?)
             .spawn()
-            .expect("spwan vm");
+            .expect("spawn vm");
         // we spawn the vm, then wait for it to have booted and afterwad
         let out_file = File::open(&format!("{}/guest.out", self.output_dir.display()))
             .context("failed to open file")?;
@@ -381,19 +422,12 @@ impl HeuristicCrashImageGenerator {
             let line = line?;
             println!("Line: {}", line);
             if line.starts_with("Successfully booted vm") {
+                let elapsed = start2.elapsed();
+                println!("Time for boot: {} ms", elapsed.as_millis());
                 break;
             }
         }
-        //std::thread::sleep(time::Duration::from_secs(4));
-
-        // this is ignored by the vm for some reason, so we use an external bash script instead
-        /*let in_file = File::open(&format!("{}/guest.in", self.output_dir.display()))
-                    .context("failed to open in file")?;
-                let mut writer = BufWriter::new(in_file);
-                write!(&mut writer, "ls\r\n")?;
-                writer.flush();
-
-        */
+        println!("is here");
         Command::new(adjacent_file(OsStr::new("send_to_vm.sh")).unwrap())
             .arg(&format!(
                 "{}/guest.in",
@@ -409,17 +443,53 @@ impl HeuristicCrashImageGenerator {
         for line in reader.lines() {
             let line = line?;
             println!("Line: {}", line);
-            if line.starts_with("Successfully booted vm") {
+            if line.starts_with("Finished tracing") {
+                println!("Finished tracing");
+                let elapsed = start.elapsed();
+                println!("Time for tracing: {} ms", elapsed.as_millis());
+                // we wait until the vm is done and kill it afterwards
+                //
+                Command::new("pkill -f qemu");
                 break;
             }
         }
-        Command::new("pwd").status()?;
 
+        Ok(())
+    }
+    // see https://gitlab.kit.edu/kit/itec/os/research/werling/crash-consistency/vinter2/-/commit/34af075be3e170d13e57c9081d864eea9c2f59a4
+    /// Ensures that there is a boot snapshot in img.qcow2.
+    fn ensure_boot_snapshot(&self) -> Result<()> {
+        use serde_json::{json, Value};
+        let img = self.output_dir.join("img.qcow2");
+        let output = Command::new("qemu-img")
+            .args(["info", "--output=json"])
+            .arg(&img)
+            .output()?;
+        let json: Value =
+            serde_json::from_slice(&output.stdout).context("could not parse qemu-img output")?;
+        if json["snapshots"][0]["name"] != json!("boot") {
+            writeln!(
+                &self.log,
+                "Creating boot snapshot for heuristic and recovery...",
+            )?;
+            let status = trace_command()?
+                .arg("--qcow")
+                .arg(&img)
+                .arg(&self.vm_config_path)
+                .stdout(self.log.try_clone()?)
+                .stderr(self.log.try_clone()?)
+                .status()?;
+
+            if !status.success() {
+                bail!("could not create boot snapshot: {}", status);
+            }
+        }
         Ok(())
     }
 
     /// Trace recovery of a crash image, for use in the cross-failure heuristic.
     pub fn trace_recovery(&self, crash_img_hash: &CrashImageHash) -> Result<PathBuf> {
+        self.ensure_boot_snapshot()?;
         let cmd = self
             .vm_config
             .commands
@@ -482,6 +552,7 @@ impl HeuristicCrashImageGenerator {
     }
 
     fn run_state_extractor(&self, crash_img: &CrashImage) -> Result<SemanticState> {
+        self.ensure_boot_snapshot();
         let cmd = format!(
             "{prefix} && {suffix} && hypercall success",
             prefix = self
@@ -517,7 +588,7 @@ impl HeuristicCrashImageGenerator {
         std::io::copy(&mut File::open(&cmd_output_path)?, &mut hasher)
             .context("could not read semantic state output file")?;
         let mut successful = false;
-        for entry in trace::parse_trace_file_bin(BufReader::new(
+        for entry in trace::parse_trace_file_bin_panda(BufReader::new(
             File::open(&trace_path).context("could not open trace output file")?,
         )) {
             match entry? {
@@ -605,7 +676,7 @@ impl HeuristicCrashImageGenerator {
                     .context("recovery trace failed")?;
                 let trace_file =
                     File::open(trace_path).context("could not open recovery trace file")?;
-                for entry in trace::parse_trace_file_bin(BufReader::new(trace_file)) {
+                for entry in trace::parse_trace_file_bin_panda(BufReader::new(trace_file)) {
                     match entry? {
                         TraceEntry::Hypercall { action, .. } if action == "success" => {
                             success = true;
@@ -787,10 +858,13 @@ impl HeuristicCrashImageGenerator {
 
         // grab a reference to the memory so that we can access it while processing the trace
         let replayer_mem = replayer.mem.clone();
+        //println!("trace path: {}", self.trace_path().display());
         let trace_file = File::open(self.trace_path()).context("could not open trace file")?;
         for entry in replayer.process_trace(BufReader::new(trace_file)) {
+            //println!("processing trace entry with id");
             match entry? {
                 TraceEntry::Fence { id, .. } => {
+                    //println!("found trace entry");
                     if current_writes && within_checkpoint_range(last_hypercall_checkpoint) {
                         self.insert_crash_image(
                             id,
@@ -802,6 +876,7 @@ impl HeuristicCrashImageGenerator {
                     }
                 }
                 TraceEntry::Write { .. } => {
+                    //println!("found write");
                     current_writes = true;
                 }
                 TraceEntry::Hypercall {
@@ -838,7 +913,9 @@ impl HeuristicCrashImageGenerator {
                     }
                     _ => {}
                 },
-                _ => {}
+                e => {
+                  //  println!("found something else, {:?}", e)
+                }
             }
         }
 

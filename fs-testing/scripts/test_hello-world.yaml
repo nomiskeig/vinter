@@ -1,9 +1,17 @@
-#trace_cmd_suffix: "hypercall checkpoint 0 && sync && hypercall checkpoint 1 && echo HelloWorld > /mnt/myfile && hypercall checkpoint 2 && sync && hypercall checkpoint 3"
-#trace_cmd_suffix: "/bin/hypercall_mpk && echo after"
+#trace_cmd_suffix: "hypercall checkpoint 0 && sync && hypercall checkpoint 1 && echo HelloWorld > /mnt/myfile && hypercall checkpoint 2 && sync &&  hypercall checkpoint 3"
+#trace_cmd_suffix: "hypercall checkpoint 0 && sync && hypercall checkpoint 1 && echo HelloWorld > /mnt/myfile && hypercall checkpoint 2 && sync &&  hypercall checkpoint 3 && echo 'Finished tracing'"
+#trace_cmd_suffix: "/bin/hypercall_mpk && echo 'Finished tracing"
 #trace_cmd_suffix: "/lib/ld-linux-x86-64.so.2 --library-path /lib /bin/hello_world.sh"
-trace_cmd_suffix: "/lib/ld-linux-x86-64.so.2 --library-path /lib /bin/starter /bin/hello_world.sh"
+#trace_cmd_suffix: "/lib/ld-linux-x86-64.so.2 --library-path /lib /bin/starter /bin/hello_world.sh && cat /proc/uptime && mkdir /shared/ && mount -t 9p -o trans=virtio shared /shared -oversion=9p2000.L && dd if=/home/simon/traces_new.bin of=/shared/trace.bin bs=1M && cat /proc/uptime && echo 'Finished tracing'"
+#
 
-#trace_cmd_suffix: "ls /bin" 
+trace_cmd_suffix: "/lib/ld-linux-x86-64.so.2 --library-path /lib /bin/perf record -F 899 -g --inherit --  /lib/ld-linux-x86-64.so.2 --library-path /lib /bin/starter /bin/hello_world.sh && cat /proc/uptime && mkdir /shared/ && mount -t 9p -o trans=virtio shared /shared -oversion=9p2000.L && dd if=/home/simon/traces_new.bin of=/shared/trace.bin bs=1M && dd if=perf.data of=/shared/perf.data bs=1M && cat /proc/uptime && echo 'Finished tracing'"
+#trace_cmd_suffix: "/lib/ld-linux-x86-64.so.2 --library-path /lib /bin/perf" 
+#trace_cmd_suffix: "cat /proc/kallsyms | grep -i nova" 
+#trace_cmd_suffix: "cat /proc/iomem" 
+#trace_cmd_suffix: "echo before && hypercall checkpoint 0 && echo done" 
+
+#trace_cmd_suffix: "ls /bin | grep perf"
 #trace_cmd_suffix: "cat /dev/pmem* && dmesg"
 #trace_cmd_suffix: " fdisk -l /dev/pmem0"
 #trace_cmd_suffix: "cp /bin/starter /bin/test_starter && ls -all /bin/ && /bin/test_starter"

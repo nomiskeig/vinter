@@ -2,7 +2,7 @@
 
 set -eux
 
-cargo build --release  --features tracer_mpk
+cargo build --release  --features tracer_mpk 
 
 # link vinter_trace to the Panda plugin directory
 ln -fs release/libvinter_trace.so target/panda_vinter_trace.so
