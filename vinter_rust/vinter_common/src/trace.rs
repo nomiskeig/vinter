@@ -204,10 +204,6 @@ impl ::bincode::Decode for TraceEntryMPK {
         // TODO: this is missing multiple thingies, like external values
         // // this creates multiple entries from a rep isntruction
         if flags & (0x1 << 2) != 0x0 {
-            println!(
-                "found flag with size {} at address {:x}",
-                size, origin_address
-            );
             state.remaining = size as usize;
             total_expected.lock().unwrap().total_expectd += size as i64 - 1 as i64;
             state.last_id = id;
@@ -225,7 +221,6 @@ impl ::bincode::Decode for TraceEntryMPK {
                 3 => 8,
                 _ => 0, // Err(::bincode::error::DecodeError::OtherString("found unhandled rep_size".to_string());
             };
-            //  println!("rep_siz is {:?}", state.rep_size);
         }
         if state.remaining > 0 {
             return Ok(create_rep_write(state));
@@ -454,9 +449,8 @@ pub fn parse_trace_file_bin_mpk<R: BufRead>(mut file: R) -> BinTraceIterator<R> 
     file.read_exact(&mut buf);
     let amount = u64::from_le_bytes(buf[8..16].try_into().unwrap());
 
-    println!("amount {}", amount);
+    //println!("amount {}", amount);
 
-    print!("is in parse_trace_file_bin, buff: {:?}\n", buf);
     {
         total_expected.lock().unwrap().total_expectd = amount as i64;
     }

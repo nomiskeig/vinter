@@ -403,6 +403,7 @@ impl HeuristicCrashImageGenerator {
             ])
             //.args(["-object", "memory-backend-file,size=256M,id=m0,mem-path=/tmp/test.txt, share=on"])
             //.args(["-device", "nvdimm,id=nvdimm1,memdev=m0,label-size=2M"])
+            
             .args([
                 "-object",
                 &format!(
@@ -411,6 +412,8 @@ impl HeuristicCrashImageGenerator {
                 ),
             ])
             .args(["-device", "virtio-pmem-pci,memdev=mem1,id=nv1"])
+
+
             .stderr(self.log.try_clone()?)
             .stdout(self.log.try_clone()?)
             .spawn()
@@ -497,7 +500,6 @@ impl HeuristicCrashImageGenerator {
             .get("recovery_cmd")
             .ok_or_else(|| anyhow!("missing recovery_cmd in VM configuration"))?;
         let path = self.recovery_trace_path(crash_img_hash);
-        println!("using path {} for trace recovery", path.display());
         let status = trace_command()?
             .arg("--qcow")
             .arg(self.output_dir.join("img.qcow2"))
@@ -630,7 +632,6 @@ impl HeuristicCrashImageGenerator {
             }};
         }
 
-        println!("inserting a crash image");
         let no_writes = mem.unpersisted_content.is_empty();
 
         // At each relevant fence, create crash images:
@@ -677,7 +678,6 @@ impl HeuristicCrashImageGenerator {
                 let trace_path = self
                     .trace_recovery(&hash)
                     .context("recovery trace failed")?;
-                println!("trying to open {:?} for the trace", trace_path.display());
                 let trace_file =
                     File::open(trace_path).context("could not open recovery trace file")?;
                 for entry in trace::parse_trace_file_bin_panda(BufReader::new(trace_file)) {
@@ -830,7 +830,6 @@ impl HeuristicCrashImageGenerator {
                 }
             }
         }
-        println!("done inserting a crash image");
         Ok(())
     }
 
@@ -863,19 +862,10 @@ impl HeuristicCrashImageGenerator {
 
         // grab a reference to the memory so that we can access it while processing the trace
         let replayer_mem = replayer.mem.clone();
-        println!("trace path: {}", self.trace_path().display());
         let trace_file = File::open(self.trace_path()).context("could not open trace file")?;
-        let mut amount = 0;
         for entry in replayer.process_trace(BufReader::new(trace_file)) {
-            //println!("processing trace entry with id");
-            amount += 1;
-
-            
-
-
             match entry? {
-                TraceEntry::Fence { id, .. } => {
-                    println!("found trace entry");
+                TraceEntry::Fence { id,.. } => {
                     if current_writes && within_checkpoint_range(last_hypercall_checkpoint) {
                         self.insert_crash_image(
                             id,
@@ -886,12 +876,7 @@ impl HeuristicCrashImageGenerator {
                         fences_with_writes += 1;
                     }
                 }
-                TraceEntry::Write { id,.. } => {
-
-                    if id == 4217 {
-                        println!("write with id {} is number {}", id, amount);
-                    }
-                    //println!("found write");
+                TraceEntry::Write { .. } => {
                     current_writes = true;
                 }
                 TraceEntry::Hypercall {
@@ -934,7 +919,6 @@ impl HeuristicCrashImageGenerator {
             }
         }
 
-        println!("amount: {}",amount);
         let index_file = File::create(self.output_dir.join("crash_images").join("index.yaml"))?;
         serde_yaml::to_writer(&index_file, &self.crash_images)
             .context("failed writing crash_images/index.yaml")?;
