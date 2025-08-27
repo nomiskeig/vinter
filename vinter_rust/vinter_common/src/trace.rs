@@ -25,6 +25,8 @@ pub struct Metadata {
     pub in_kernel: bool,
     /// kernel stack trace (frame pointer walk)
     pub kernel_stacktrace: Vec<u64>,
+    #[cfg(feature = "investigate_vinter")]
+    pub timestamp: u64,
 }
 
 #[derive(Debug)]
@@ -41,6 +43,7 @@ pub enum TraceEntryMPK {
         content: Vec<u8>,
         non_temporal: bool,
         metadata: Metadata,
+        origin_address: usize,
     },
     Fence {
         id: usize,
@@ -73,6 +76,7 @@ pub enum TraceEntry {
         size: usize,
         content: Vec<u8>,
         non_temporal: bool,
+        //origin_address: usize,
         metadata: Metadata,
     },
     Fence {
@@ -107,6 +111,9 @@ struct DecodeState {
     offset: usize,
     value: u64,
     last_id: u32,
+    in_kernel: u64,
+    non_temporal: u32,
+    origin_address: u64,
 }
 struct TotalState {
     total_expectd: i64,
@@ -119,19 +126,22 @@ fn create_rep_write(mut state: std::sync::MutexGuard<'_, DecodeState>) -> TraceE
 
     TraceEntryMPK::Write {
         id: (state.last_id + (state.offset - 1) as u32) as usize,
-        address: (state.base_address + ((state.count -1) as u32 * state.rep_size) as u64) as usize,
+        address: (state.base_address + ((state.count - 1) as u32 * state.rep_size) as u64) as usize,
         size: state.rep_size as usize,
+        origin_address: state.origin_address as usize,
         content: state
             .value
             .to_le_bytes()
             .into_iter()
             .take(state.rep_size as usize)
             .collect(),
-        non_temporal: true,
+        non_temporal: { state.non_temporal > 0 },
         metadata: Metadata {
             pc: 0,
-            in_kernel: false,
+            in_kernel: { state.in_kernel > 0 },
             kernel_stacktrace: vec![],
+            #[cfg(feature = "investigate_vinter")]
+            timestamp: 0 as u64,
         },
     }
 }
@@ -145,6 +155,9 @@ static decode_state: Mutex<DecodeState> = Mutex::new(DecodeState {
     base_address: 0,
     last_id: 0,
     value: 0,
+    in_kernel: 0,
+    origin_address: 0,
+    non_temporal: 0,
 });
 static total_expected: Mutex<TotalState> = Mutex::new(TotalState { total_expectd: 0 });
 impl ::bincode::Decode for TraceEntryMPK {
@@ -156,29 +169,55 @@ impl ::bincode::Decode for TraceEntryMPK {
         if state.remaining > 0 {
             return Ok(create_rep_write(state));
         }
+        let address: u64;
+        let timestamp: u64;
+        let non_temporal: u32;
         let variant_index = <u32 as ::bincode::Decode>::decode(decoder)?;
         let mnemonic = <u32 as ::bincode::Decode>::decode(decoder)?;
         let decoded_id = <u32 as ::bincode::Decode>::decode(decoder)?;
-        let non_temporal = <u32 as ::bincode::Decode>::decode(decoder)?;
+        #[cfg(not(feature = "investigate_vinter"))]
+        {
+            non_temporal = <u32 as ::bincode::Decode>::decode(decoder)?;
+        }
+        #[cfg(feature = "investigate_vinter")]
+        {
+            // read padding after the threee ints above
+            non_temporal = <u32 as ::bincode::Decode>::decode(decoder)?;
+        }
         let value_size_and_location = <u64 as ::bincode::Decode>::decode(decoder)?;
-        let value = <u64 as ::bincode::Decode>::decode(decoder)?;
-        let address = <u64 as ::bincode::Decode>::decode(decoder)?;
         let flags = <u64 as ::bincode::Decode>::decode(decoder)?;
+        let value = <u64 as ::bincode::Decode>::decode(decoder)?;
+        #[cfg(not(feature = "investigate_vinter"))]
+        {
+            address = <u64 as ::bincode::Decode>::decode(decoder)?;
+        }
+        #[cfg(feature = "investigate_vinter")]
+        {
+            timestamp = <u64 as ::bincode::Decode>::decode(decoder)?;
+            address = <u64 as ::bincode::Decode>::decode(decoder)?;
+        }
+        let in_kernel = <u64 as ::bincode::Decode>::decode(decoder)?;
+        let origin_address = <u64 as ::bincode::Decode>::decode(decoder)?;
         let size = value_size_and_location >> 1;
         let mut id = decoded_id + state.total_offset as u32;
-        //println!("next id is {}", id);
 
         // TODO: this is missing multiple thingies, like external values
         // // this creates multiple entries from a rep isntruction
         if flags & (0x1 << 2) != 0x0 {
-            println!("found flag with size {}", size);
+            println!(
+                "found flag with size {} at address {:x}",
+                size, origin_address
+            );
             state.remaining = size as usize;
             total_expected.lock().unwrap().total_expectd += size as i64 - 1 as i64;
             state.last_id = id;
             state.count = 0;
+            state.in_kernel = in_kernel;
             state.offset = 0;
             state.value = value;
+            state.non_temporal = non_temporal;
             state.base_address = address;
+            state.origin_address = origin_address;
             state.rep_size = match flags & 0x3 {
                 0 => 1,
                 1 => 2,
@@ -186,7 +225,7 @@ impl ::bincode::Decode for TraceEntryMPK {
                 3 => 8,
                 _ => 0, // Err(::bincode::error::DecodeError::OtherString("found unhandled rep_size".to_string());
             };
-          //  println!("rep_siz is {:?}", state.rep_size);
+            //  println!("rep_siz is {:?}", state.rep_size);
         }
         if state.remaining > 0 {
             return Ok(create_rep_write(state));
@@ -196,16 +235,19 @@ impl ::bincode::Decode for TraceEntryMPK {
                 id: id as usize,
                 address: address as usize,
                 size: size as usize,
+                origin_address: origin_address as usize,
                 content: value
                     .to_le_bytes()
                     .into_iter()
                     .take(size as usize)
                     .collect(),
-                non_temporal: false,
+                non_temporal: { non_temporal > 0 },
                 metadata: Metadata {
                     pc: 0,
-                    in_kernel: false,
+                    in_kernel: { in_kernel > 0 },
                     kernel_stacktrace: vec![],
+                    #[cfg(feature = "investigate_vinter")]
+                    timestamp,
                 },
             }),
             1u32 => Ok(Self::Fence {
@@ -218,6 +260,8 @@ impl ::bincode::Decode for TraceEntryMPK {
                     pc: 0,
                     in_kernel: false,
                     kernel_stacktrace: vec![],
+                    #[cfg(feature = "investigate_vinter")]
+                    timestamp,
                 },
             }),
             2u32 => Ok(Self::Flush {
@@ -231,6 +275,8 @@ impl ::bincode::Decode for TraceEntryMPK {
                     pc: 0,
                     in_kernel: false,
                     kernel_stacktrace: vec![],
+                    #[cfg(feature = "investigate_vinter")]
+                    timestamp,
                 },
             }),
             3u32 => Ok(Self::Read {
@@ -264,12 +310,14 @@ pub fn get_trace_entry(entry: TraceEntryMPK) -> TraceEntry {
             address,
             size,
             content,
+            origin_address,
             non_temporal,
             metadata,
         } => TraceEntry::Write {
             id,
             address,
             size,
+            // origin_address,
             content,
             non_temporal,
             metadata,
@@ -360,38 +408,27 @@ impl<R: Read> Iterator for BinTraceIterator<R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         use bincode::error::DecodeError;
-        match total_expected.lock().unwrap().total_expectd > 0
-            || total_expected.lock().unwrap().total_expectd <= -1
-        {
-            true => {
-                {}
-                total_expected.lock().unwrap().total_expectd -= 1;
-                let entry;
-                #[cfg(feature = "tracer_mpk")]
-                {
-                    entry = match self.tipe {
-                        TracerType::MPK => TraceEntry::decode_from_std_read_mpk(&mut self.file),
-                        TracerType::PANDA => TraceEntry::decode_from_std_read_panda(&mut self.file),
-                    };
+        let expected = total_expected.lock().unwrap().total_expectd;
+        let entry;
+        match self.tipe {
+            TracerType::MPK => match expected > 0 {
+                true => {
+                    total_expected.lock().unwrap().total_expectd -= 1;
+                    entry = TraceEntry::decode_from_std_read_mpk(&mut self.file);
                 }
-                #[cfg(not(feature = "tracer_mpk"))]
-                {
-                    entry = TraceEntry::decode_from_std_read_panda(&mut self.file);
-                }
-                //println!("got entry {:?}", entry);
-                return match entry {
-                    Ok(e) => Some(Ok(e)),
-                    Err(DecodeError::UnexpectedEnd) => {
-                        None
-                    }
-                    Err(e) => {
-                        print!("got an error:\n");
-                        Some(Err(e.into()))
-                    }
-                };
+                false => return None,
+            },
+            TracerType::PANDA => {
+                entry = TraceEntry::decode_from_std_read_panda(&mut self.file);
             }
-            false => return None,
-        };
+        }
+        match entry {
+            Ok(e) => Some(Ok(e)),
+            Err(DecodeError::UnexpectedEnd) => None,
+            Err(e) => {
+                Some(Err(e.into()))
+            }
+        }
     }
 }
 
@@ -406,10 +443,6 @@ pub fn new_trace_writer_bin<W: Write>(file: W) -> TraceWriter<W> {
 pub fn parse_trace_file_bin_panda<R: BufRead>(
     file: R,
 ) -> BinTraceIterator<snap::read::FrameDecoder<R>> {
-    {
-        total_expected.lock().unwrap().total_expectd = -1 as i64;
-    }
-
     BinTraceIterator {
         file: snap::read::FrameDecoder::new(file),
         tipe: TracerType::PANDA,
@@ -464,6 +497,7 @@ pub fn parse_trace_file_text(file: impl BufRead) -> impl Iterator<Item = Result<
                         id,
                         address,
                         size,
+                        //              origin_address: 0,
                         content,
                         non_temporal,
                         metadata: Default::default(),

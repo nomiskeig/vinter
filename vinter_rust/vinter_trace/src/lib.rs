@@ -311,6 +311,7 @@ fn init() -> Result<TracerState> {
                         size,
                         content: unsafe { from_buf_raw(buf, size) },
                         non_temporal: insn.is_nt(),
+                        //origin_address: 0,
                         metadata: metadata(cpu_state, metadata_what),
                     })
                     .expect("failed writing trace");

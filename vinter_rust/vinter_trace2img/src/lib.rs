@@ -355,7 +355,7 @@ impl HeuristicCrashImageGenerator {
 
         Ok(())
     }
-   //#[cfg(feature = "tracer_mpk")]
+   #[cfg(feature = "tracer_mpk")]
     pub fn trace_pre_failure(&self) -> Result<()> {
         let cmd = format!("cat /proc/uptime; cat /proc/uptime; cat /proc/uptime; {prefix} && {suffix} && hypercall success; cat /proc/uptime" ,
             prefix = self.vm_config.commands.get("trace_cmd_prefix").ok_or_else(|| anyhow!("missing trace_cmd_prefix in VM configuration"))?,
@@ -392,8 +392,9 @@ impl HeuristicCrashImageGenerator {
             //  .args(["-drive", "if=virtio,format=qcow2,file=/var/tmp/vinter.qcow2"])
             //.args(["-m", &format!("{},maxmem=4G",&self.vm_config.vm.mem)])
             //.args(["-s", "-S"])
-            .args(["-m", "8G,maxmem=20G,slots=1"])
+            .args(["-m", "20G,maxmem=24G,slots=1"])
             .args(["-enable-kvm"])
+            //.args(["-icount", "shift=0"])
             .args(&self.vm_config.vm.qemu_args)
             //.args(["-append", "console=ttyS0"])
             .args([
@@ -496,6 +497,7 @@ impl HeuristicCrashImageGenerator {
             .get("recovery_cmd")
             .ok_or_else(|| anyhow!("missing recovery_cmd in VM configuration"))?;
         let path = self.recovery_trace_path(crash_img_hash);
+        println!("using path {} for trace recovery", path.display());
         let status = trace_command()?
             .arg("--qcow")
             .arg(self.output_dir.join("img.qcow2"))
@@ -628,6 +630,7 @@ impl HeuristicCrashImageGenerator {
             }};
         }
 
+        println!("inserting a crash image");
         let no_writes = mem.unpersisted_content.is_empty();
 
         // At each relevant fence, create crash images:
@@ -674,6 +677,7 @@ impl HeuristicCrashImageGenerator {
                 let trace_path = self
                     .trace_recovery(&hash)
                     .context("recovery trace failed")?;
+                println!("trying to open {:?} for the trace", trace_path.display());
                 let trace_file =
                     File::open(trace_path).context("could not open recovery trace file")?;
                 for entry in trace::parse_trace_file_bin_panda(BufReader::new(trace_file)) {
@@ -826,6 +830,7 @@ impl HeuristicCrashImageGenerator {
                 }
             }
         }
+        println!("done inserting a crash image");
         Ok(())
     }
 
@@ -858,13 +863,19 @@ impl HeuristicCrashImageGenerator {
 
         // grab a reference to the memory so that we can access it while processing the trace
         let replayer_mem = replayer.mem.clone();
-        //println!("trace path: {}", self.trace_path().display());
+        println!("trace path: {}", self.trace_path().display());
         let trace_file = File::open(self.trace_path()).context("could not open trace file")?;
+        let mut amount = 0;
         for entry in replayer.process_trace(BufReader::new(trace_file)) {
             //println!("processing trace entry with id");
+            amount += 1;
+
+            
+
+
             match entry? {
                 TraceEntry::Fence { id, .. } => {
-                    //println!("found trace entry");
+                    println!("found trace entry");
                     if current_writes && within_checkpoint_range(last_hypercall_checkpoint) {
                         self.insert_crash_image(
                             id,
@@ -875,7 +886,11 @@ impl HeuristicCrashImageGenerator {
                         fences_with_writes += 1;
                     }
                 }
-                TraceEntry::Write { .. } => {
+                TraceEntry::Write { id,.. } => {
+
+                    if id == 4217 {
+                        println!("write with id {} is number {}", id, amount);
+                    }
                     //println!("found write");
                     current_writes = true;
                 }
@@ -919,6 +934,7 @@ impl HeuristicCrashImageGenerator {
             }
         }
 
+        println!("amount: {}",amount);
         let index_file = File::create(self.output_dir.join("crash_images").join("index.yaml"))?;
         serde_yaml::to_writer(&index_file, &self.crash_images)
             .context("failed writing crash_images/index.yaml")?;
