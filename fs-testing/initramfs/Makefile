@@ -10,7 +10,8 @@ MPK_DEPS := \
 	../../MPKTracer/out/libZydis.so.4-no_libc \
 	../../MPKTracer/out/starter \
 	../../MPKTracer/out/tracer_preload.so.1 \
-	../../MPKTracer/kernel/tracer_module/tracer_module_vinter.ko
+	../../MPKTracer/kernel/tracer_module/tracer_module_vinter.ko 
+#	../../MPKTracer/tests/collector_test/op_codes/test_slowdown_loops/test_module.ko
 	
 
 PWD := $(CURDIR)
@@ -30,11 +31,16 @@ initramfs_mpk.cpio.gz: $(INITRAMFS_DEPS) $(MPK_DEPS)
 	./copy-binary.sh ../../MPKTracer/out/libZydis.so.4-no_libc mpk
 	./copy-binary.sh ../../MPKTracer/out/starter mpk
 	./copy-binary.sh ../../MPKTracer/out/tracer_preload.so.1 mpk
+	#cp ../../MPKTracer/tests/collector_test/op_codes/test_slowdown_loops/test_module.ko mpk/bin
 	cp /usr/bin/sh /tmp/sh_dynamic
 	./copy-binary.sh /tmp/sh_dynamic mpk
 	cp /usr/bin/mount /tmp/mount_dynamic
 	./copy-binary.sh /tmp/mount_dynamic mpk
-	./copy-binary.sh /usr/bin/perf mpk
+	#./copy-binary.sh /usr/bin/perf mpk
+	cp /usr/bin/touch /tmp/touch_dynamic
+	./copy-binary.sh /tmp/touch_dynamic mpk
+	cp /usr/bin/sleep /tmp/sleep_dynamic
+	./copy-binary.sh /tmp/sleep_dynamic mpk
 	# copy over these libs into lib64 because the linker/shell requires them there
 	cp mpk/lib/libtinfo.so.6 mpk/lib64
 	cp mpk/lib/libc.so.6 mpk/lib64

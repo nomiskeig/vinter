@@ -1,4 +1,5 @@
 /initramfs
 /busybox
 /busybox_pmfs
+/mpk
 *.cpio.gz

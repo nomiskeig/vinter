@@ -18,6 +18,8 @@ cp init initramfs
 "${BUSYBOX:-./busybox}" --install initramfs/bin
 cp ../../vinter_python/hypercall initramfs/bin
 cp ./hello_world.sh initramfs/bin
+cp ./test_kernel.sh initramfs/bin
+cp ./touch.sh initramfs/bin
 # we need to build the tracer module again the kernel here, we do that in the makefile
 #cp ../../MPKTracer/out/tracer_module.ko initramfs/bin
 
