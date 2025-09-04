@@ -137,7 +137,11 @@ impl X86PersistentMemory {
 
     pub fn write(&mut self, address: usize, value: &[u8], non_temporal: bool, metadata: &Metadata) {
         // test to see if we even get larger stores
-        assert!(matches!(value.len(), 1 | 2 | 4 | 8), "{}", format!("size didnt match, received {}", value.len()));
+        assert!(
+            matches!(value.len(), 1 | 2 | 4 | 8),
+            "{}",
+            format!("size didnt match, received {}", value.len())
+        );
         let address_stop = address + value.len();
         let split_address_ranges = {
             let start = address - address % 8;
@@ -201,6 +205,12 @@ impl X86PersistentMemory {
         if let Some(content) = self.unpersisted_content.get_mut(&line) {
             assert!(content.flushed_index > 0);
             for write in content.drain_flushed_writes() {
+                // skip writes with address that are too big, we get those because of the
+                // trampolines we install and they are used even though we do not want to trace
+                // those instructions
+                if write.address_start > self.image.mapping.len() {
+                    continue;
+                }
                 self.image[write.address_range()].copy_from_slice(&write.value);
             }
             if content.writes.is_empty() {

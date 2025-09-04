@@ -221,6 +221,7 @@ impl ::bincode::Decode for TraceEntryMPK {
                 3 => 8,
                 _ => 0, // Err(::bincode::error::DecodeError::OtherString("found unhandled rep_size".to_string());
             };
+            println!("found rep with size {} and id {} and rep_size {}", size, id, state.rep_size);
         }
         if state.remaining > 0 {
             return Ok(create_rep_write(state));

@@ -36,7 +36,7 @@ impl MemoryImage for MemoryImageVec {
 
 pub struct MemoryImageMmap {
     tmpfile: NamedTempFile,
-    mapping: MmapMut,
+    pub mapping: MmapMut,
 }
 
 impl MemoryImageMmap {

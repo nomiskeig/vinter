@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::Seek;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
+use std::process::Command;
 use vinter_common::trace::{self, TraceEntry};
 #[derive(Parser, Debug)]
 #[clap(version, about, long_about= None)]
@@ -95,7 +96,6 @@ fn main() -> Result<()> {
     }
     #[cfg(feature = "investigate_vinter")]
     {
-
         for entry in trace::parse_trace_file_bin_mpk(reader).map(move |entry| {
             match &entry {
                 Ok(TraceEntry::Write {
@@ -118,12 +118,12 @@ fn main() -> Result<()> {
                 }) => {
                     write!(&mut writer, "{}\n", address);
                     /*write!(
-                        &mut writer,
-                        "Read, ID: {}, address: {:#x}, size: {}, content: {:x?}\n",
-                        id, address, size, content
-                    )
-                    .context("could not print read");
-*/
+                                            &mut writer,
+                                            "Read, ID: {}, address: {:#x}, size: {}, content: {:x?}\n",
+                                            id, address, size, content
+                                        )
+                                        .context("could not print read");
+                    */
                 }
                 Ok(TraceEntry::Fence {
                     id,
@@ -132,8 +132,8 @@ fn main() -> Result<()> {
                 }) => {
                     //write!(&mut writer, "{}", address);
                     /*write!(&mut writer, "{}, {}\n", id, metadata.timestamp)
-                        .context("could not print write");
-*/
+                                            .context("could not print write");
+                    */
                     // A fence persists all flushed cachelines. For crash image
                     // generation, we still need to see these flushed lines, so
                     // defer the flush until the next iteration.
@@ -147,7 +147,7 @@ fn main() -> Result<()> {
                 }) => {
                     write!(&mut writer, "{}\n", address);
                     //write!(&mut writer, "{}, {}\n", id, metadata.timestamp)
-                     //   .context("could not print flush");
+                    //   .context("could not print flush");
                 }
                 Ok(TraceEntry::Hypercall { id, action, value }) => {}
 
