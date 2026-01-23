@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, Write};
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::{Parser, Subcommand};
 
 use vinter_trace2img::{
@@ -87,8 +87,12 @@ fn main() -> Result<()> {
                 output_dir.unwrap_or(PathBuf::from(".")),
             )?;
             println!("Tracing command...");
-            gen.trace_pre_failure()
-                .context("pre-failure tracing failed")?;
+            match gen.trace_pre_failure()
+                .context("pre-failure tracing failed") {
+                    Ok(_) =>{},
+                    Err(err) => return Err(err),
+                }
+
             println!("Pre-failure trace finished. Replaying trace...");
             let fences_with_writes = gen.replay().context("replay failed")?;
             println!(

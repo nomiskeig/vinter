@@ -1,4 +1,6 @@
 # sleep: nova appears to only use second accuracy for timestamps
-trace_cmd_suffix: "hypercall checkpoint 1 && touch /mnt/myfile && sync && hypercall checkpoint 2 && sleep 2 && touch /mnt/myfile && sync && hypercall checkpoint 3"
+#trace_cmd_suffix: "hypercall checkpoint 1 && touch /mnt/myfile && sync && hypercall checkpoint 2 && sleep 2 && touch /mnt/myfile && sync && hypercall checkpoint 3"
+
+trace_cmd_suffix: "/lib/ld-linux-x86-64.so.2 --library-path /lib /bin/starter /bin/touch.sh && cat /proc/uptime && mkdir /shared/ && mount -t 9p -o trans=virtio shared /shared -oversion=9p2000.L && dd if=/home/simon/traces_new.bin of=/shared/trace.bin bs=1M && cat /proc/uptime  && echo 'Finished tracing'"
 checkpoint_range: [1, 3]
 dump_cmd_suffix: "echo test >> /mnt/myfile && rm -r /mnt/*"

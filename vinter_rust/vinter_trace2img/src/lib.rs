@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
 use std::time::Instant;
+use std::fmt::Error;
 
 use anyhow::{anyhow, bail, Context, Result};
 use itertools::Itertools;
@@ -360,7 +361,6 @@ impl HeuristicCrashImageGenerator {
         let cmd = format!("cat /proc/uptime; cat /proc/uptime; cat /proc/uptime; {prefix} && {suffix} && hypercall success; cat /proc/uptime" ,
             prefix = self.vm_config.commands.get("trace_cmd_prefix").ok_or_else(|| anyhow!("missing trace_cmd_prefix in VM configuration"))?,
             suffix = self.test_config.trace_cmd_suffix);
-        println!("executing trace_pre_failure, {}", self.output_dir.display());
         //let com = format!("pwd && mkfifo {in}",in = self.output_dir.join("guest.in").display());
         //   println!("{}", com);
         //Command::new(com).status()?;
@@ -373,6 +373,7 @@ impl HeuristicCrashImageGenerator {
             &self.output_dir.join("guest.in"),
             nix::sys::stat::Mode::S_IRWXU,
         )?;
+
         //Command::new("rm /var/tmp/vinter.qcow2").status();
         //Command::new("qemu-img create -f qcow2 /var/tmp/vinter.qcow2").status()?;
         let mut start = Instant::now();
@@ -401,8 +402,6 @@ impl HeuristicCrashImageGenerator {
                 "-serial",
                 &format!("pipe:{}/guest", self.output_dir.display()),
             ])
-            //.args(["-object", "memory-backend-file,size=256M,id=m0,mem-path=/tmp/test.txt, share=on"])
-            //.args(["-device", "nvdimm,id=nvdimm1,memdev=m0,label-size=2M"])
             
             .args([
                 "-object",
@@ -417,21 +416,20 @@ impl HeuristicCrashImageGenerator {
             .stderr(self.log.try_clone()?)
             .stdout(self.log.try_clone()?)
             .spawn()
-            .expect("spawn vm");
+            .expect("Run vm");
         // we spawn the vm, then wait for it to have booted and afterwad
         let out_file = File::open(&format!("{}/guest.out", self.output_dir.display()))
             .context("failed to open file")?;
         let reader = BufReader::new(out_file);
         for line in reader.lines() {
             let line = line?;
-            println!("Line: {}", line);
+            println!("{}", line);
             if line.starts_with("Successfully booted vm") {
                 let elapsed = start2.elapsed();
                 println!("Time for boot: {} ms", elapsed.as_millis());
                 break;
             }
         }
-        println!("is here");
         Command::new(adjacent_file(OsStr::new("send_to_vm.sh")).unwrap())
             .arg(&format!(
                 "{}/guest.in",
@@ -446,9 +444,12 @@ impl HeuristicCrashImageGenerator {
         let reader = BufReader::new(out_file2);
         for line in reader.lines() {
             let line = line?;
-            println!("Line: {}", line);
+            println!("{}", line);
+            if line.starts_with("BUG") {
+                return Err(anyhow!("Bug occured in vm"));
+                break;
+            }
             if line.starts_with("Finished tracing") {
-                println!("Finished tracing");
                 let elapsed = start.elapsed();
                 println!("Time for tracing: {} ms", elapsed.as_millis());
                 // we wait until the vm is done and kill it afterwards
