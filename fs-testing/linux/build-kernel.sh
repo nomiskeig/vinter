@@ -19,4 +19,12 @@ fi
 ln -sf "../$kernel.config" "$build/.config"
 
 cd "$kernel"
+
+if [ -n "$IN_NIX_SHELL" ]; then
+	nix develop --command make -j$(nproc) 0="../$build" bzImage
+
+else 
 make -j$(nproc) O="../$build" bzImage
+fi
+
+
