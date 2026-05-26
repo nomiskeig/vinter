@@ -51,6 +51,7 @@
             flex
             bison
             zip
+            glibc
             glibc.static
           ]
           ++ [
