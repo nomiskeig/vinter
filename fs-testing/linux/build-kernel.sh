@@ -25,7 +25,7 @@ fi
 cd "$kernel"
 
 
-if [ -n "$IN_NIX_SHELL" ]; then
+if [ -n "${IN_NIX_SHELL:-}" ]; then
 	nix develop --command make -j$(nproc) O="../$build" bzImage
 
 else 

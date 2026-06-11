@@ -1,5 +1,5 @@
 
-MPKTRACER_DIR := /home/simon/projects/mpktracer
+MPKTRACER_DIR := /home/sgiek/mpktracer
 INITRAMFS_DEPS := \
 	create-initramfs.sh \
 	busybox \
