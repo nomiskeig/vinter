@@ -61,6 +61,20 @@ podman run --rm -v"$PWD/fs-testing/linux:/mnt" docker.io/library/gcc:4 \
 
 ```
 
+## Switching to MPKTracer
+
+There are some places that need to be touched for swichting to the MPKTracer:
+- ```--features tracer_mpk``` needs to be added to the cargo build command defined in build-vinter.sh
+- test_hello-world.yaml needs to be adapted to use the second ```trace_cmd_suffix``` instead of the first
+- Set ```vms=("vm_MPKTracerNOVA")``` in run_getting-started.sh
+
+
+
+## Printing the traces
+
+There is a utility in vinter_rust/vinter_print_trace. Can print both traces from the PANDA based tracer as well as the MPK Tracer. To change which kind of trace is read, use ```trace::parse_trace_file_bin``` or
+```trace::parse_trace_file_bin_mpk``` respectively.
+
 ## Artifact Evaluation
 
 Information for artifact evaluation is in `artifact-evaluation/README.md`.
@@ -68,3 +82,7 @@ Information for artifact evaluation is in `artifact-evaluation/README.md`.
 ## License
 
 Vinter is released under the MIT license, see `LICENSE` for details.
+
+
+
+
