@@ -9,7 +9,7 @@ vm:
   prompt: '(/ # |.*---\[ end trace )' # note that the latter cuts of a bit from kernel stack traces, but we can live with that. Put everything in brackets because panda_expect.py runs `self.expectation_ends_re = re.compile(r'(.*)' + expectation)` and uses the first group
   qemu_args: [
     '-cpu', 'max,fsgsbase=off', # enable clwb, clflushopt
-    '-append', 'console=ttyS0,115200n8 memmap=5M!128M memmap=123M!133M loglevel=1',
+    '-append', 'console=ttyS0,115200n8 memmap=5M!128M memmap=123M!133M loglevel=0',
     # ^ kernel enforces alignment at 128 MiB (https://elixir.bootlin.com/linux/v5.1/source/kernel/memremap.c#L157), and within one 128 MiB block, it may not overlap with other memory such as system RAM for it to be mapped as /dev/pmem0 (https://elixir.bootlin.com/linux/v5.1/source/kernel/memremap.c#L180).
   ]
   kernel: '../linux/nova_build/arch/x86/boot/bzImage'

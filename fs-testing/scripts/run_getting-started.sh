@@ -9,9 +9,14 @@ results=results_getting-started
 rm -rf "$results"
 mkdir -p "$results"/{vinter_python,vinter_rust}
 
+vm=${1:-"vm_nova"}
+if [ "$vm" = "vm_nova" ]; then
 test=test_hello-world
+else 
+test=test_hello-world-mpk
+fi
 #vms=("vm_nova")
-vms=("vm_MPKTracerNOVA")
+vms=("${vm}")
 
 # Analysis with vinter_rust
 for vm in "${vms[@]}"; do

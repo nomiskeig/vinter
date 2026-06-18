@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
 set -eux
+build_suffix=${1:-""}
 
-cargo build --release --features tracer_mpk # --features investigate_vinter
+cargo build --release ${build_suffix} # --features investigate_vinter
 
 # link vinter_trace to the Panda plugin directory
 ln -fs release/libvinter_trace.so target/panda_vinter_trace.so
