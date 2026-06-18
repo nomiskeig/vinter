@@ -206,7 +206,6 @@ impl ::bincode::Decode for TraceEntryMPK {
         // TODO: this is missing multiple thingies, like external values
         // // this creates multiple entries from a rep isntruction
         if flags & (0x1 << 2) != 0x0 {
-            println!("found rep thing with id {} and amount {}", id, size);
             state.remaining = size as usize;
             total_expected.lock().unwrap().total_expectd += size as i64 - 1 as i64;
             state.last_id = id;
@@ -453,7 +452,6 @@ pub fn parse_trace_file_bin_mpk<R: BufRead>(mut file: R) -> BinTraceIterator<R> 
     file.read_exact(&mut buf);
     let amount = u64::from_le_bytes(buf[8..16].try_into().unwrap());
 
-    println!("amount {}", amount);
 
     {
         total_expected.lock().unwrap().total_expectd = amount as i64;
