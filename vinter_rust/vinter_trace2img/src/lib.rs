@@ -2,13 +2,13 @@ use core::time;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
+use std::fmt::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
 use std::time::Instant;
-use std::fmt::Error;
 
 use anyhow::{anyhow, bail, Context, Result};
 use itertools::Itertools;
@@ -70,7 +70,6 @@ impl MemoryReplayer {
                 }) => {
                     if content.len() == 0 {
                         println!("write: {:?}", entry);
-
                     }
                     self.mem
                         .borrow_mut()
@@ -302,6 +301,8 @@ impl HeuristicCrashImageGenerator {
             .context("could not create semantic_states directory")?;
         let log = File::create(output_dir.join("trace2img.log"))
             .context("could not create trace2img.log")?;
+
+        let vm_log = File::create(output_dir.join("vm.log")).context("could not create vm.log")?;
         // create a base image for snapshots
         let status = Command::new("qemu-img")
             .args(["create", "-f", "qcow2"])
@@ -328,7 +329,7 @@ impl HeuristicCrashImageGenerator {
     /// Start a VM and trace test execution.
     #[cfg(not(feature = "tracer_mpk"))]
     pub fn trace_pre_failure(&self) -> Result<()> {
-        let cmd = format!("cat /proc/uptime; cat /proc/uptime; cat /proc/uptime; {prefix} && {suffix} && hypercall success; cat /proc/uptime",
+        let cmd = format!("cat /proc/uptime; cat /proc/uptime; echo \"time before tracing: $(cat /proc/uptime)\"; {prefix} && {suffix} && hypercall success; echo \"time done: $(cat /proc/uptime)\"",
             prefix = self.vm_config.commands.get("trace_cmd_prefix").ok_or_else(|| anyhow!("missing trace_cmd_prefix in VM configuration"))?,
             suffix = self.test_config.trace_cmd_suffix);
         let mut start = Instant::now();
@@ -348,17 +349,30 @@ impl HeuristicCrashImageGenerator {
             .stdout(self.log.try_clone()?)
             .status()?;
 
-                let elapsed = start.elapsed();
-                println!("Time for tracing original: {} ms", elapsed.as_millis());
+        let elapsed = start.elapsed();
+
+        let mut out_file3 = OpenOptions::new()
+            .append(true)
+            .open(format!("{}/vm.log", self.output_dir.display()))
+            .unwrap();
+
+        if let Err(e) = writeln!(
+            out_file3,
+            "Time for tracing total: {} ms",
+            elapsed.as_millis()
+        ) {
+            eprintln!("Couldn't write to file: {}", e);
+        }
+        println!("Time for tracing total: {} ms", elapsed.as_millis());
         if !status.success() {
             bail!("pre-failure tracing failed with status {}", status);
         }
 
         Ok(())
     }
-   #[cfg(feature = "tracer_mpk")]
+    #[cfg(feature = "tracer_mpk")]
     pub fn trace_pre_failure(&self) -> Result<()> {
-        let cmd = format!("cat /proc/uptime; cat /proc/uptime; cat /proc/uptime; {prefix} && {suffix} && hypercall success; cat /proc/uptime" ,
+        let cmd = format!("cat /proc/uptime; cat /proc/uptime; cat /proc/uptime; {prefix} && {suffix} && hypercall success; " ,
             prefix = self.vm_config.commands.get("trace_cmd_prefix").ok_or_else(|| anyhow!("missing trace_cmd_prefix in VM configuration"))?,
             suffix = self.test_config.trace_cmd_suffix);
         //let com = format!("pwd && mkfifo {in}",in = self.output_dir.join("guest.in").display());
@@ -402,7 +416,6 @@ impl HeuristicCrashImageGenerator {
                 "-serial",
                 &format!("pipe:{}/guest", self.output_dir.display()),
             ])
-            
             .args([
                 "-object",
                 &format!(
@@ -411,8 +424,6 @@ impl HeuristicCrashImageGenerator {
                 ),
             ])
             .args(["-device", "virtio-pmem-pci,memdev=mem1,id=nv1"])
-
-
             .stderr(self.log.try_clone()?)
             .stdout(self.log.try_clone()?)
             .spawn()
@@ -441,9 +452,18 @@ impl HeuristicCrashImageGenerator {
             .status()?;
         let out_file2 = File::open(&format!("{}/guest.out", self.output_dir.display()))
             .context("failed to open file")?;
+
+        let mut out_file3 = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open(format!("{}/vm.log", self.output_dir.display()))
+            .unwrap();
         let reader = BufReader::new(out_file2);
         for line in reader.lines() {
             let line = line?;
+            if let Err(e) = writeln!(out_file3, "{}", line) {
+                eprintln!("Couldn't write to file: {}", e);
+            }
             println!("{}", line);
             if line.starts_with("BUG") {
                 return Err(anyhow!("Bug occured in vm"));
@@ -451,6 +471,14 @@ impl HeuristicCrashImageGenerator {
             }
             if line.starts_with("Finished tracing") {
                 let elapsed = start.elapsed();
+
+                if let Err(e) = writeln!(
+                    out_file3,
+                    "Time for tracing total: {} ms",
+                    elapsed.as_millis()
+                ) {
+                    eprintln!("Couldn't write to file: {}", e);
+                }
                 println!("Time for tracing: {} ms", elapsed.as_millis());
                 // we wait until the vm is done and kill it afterwards
                 //
@@ -866,7 +894,7 @@ impl HeuristicCrashImageGenerator {
         let trace_file = File::open(self.trace_path()).context("could not open trace file")?;
         for entry in replayer.process_trace(BufReader::new(trace_file)) {
             match entry? {
-                TraceEntry::Fence { id,.. } => {
+                TraceEntry::Fence { id, .. } => {
                     if current_writes && within_checkpoint_range(last_hypercall_checkpoint) {
                         self.insert_crash_image(
                             id,
@@ -915,7 +943,7 @@ impl HeuristicCrashImageGenerator {
                     _ => {}
                 },
                 e => {
-                  //  println!("found something else, {:?}", e)
+                    //  println!("found something else, {:?}", e)
                 }
             }
         }

@@ -22,3 +22,6 @@ cp -r results_getting-started/vinter_rust/vm_MPKTracerNOVA/test_hello-world-mpk 
 
 cd "$basedir"/compare_res
 ./compare.sh
+
+cd "$basedir"
+python create_diagram.py

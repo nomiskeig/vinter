@@ -1,5 +1,4 @@
- 
-trace_cmd_suffix: "mkdir mpktracer_out && XDG_RUNTIME_DIR=/mpktracer_out MPKTRACER_OUT=/mpktracer_out /lib/ld-linux-x86-64.so.2 --library-path /lib ./bin/MPKTracerStarter /bin/hello_world.sh;  echo 'test2' && ls /mpktracer_out &&  cat /proc/uptime  && mkdir /shared/ && mount -t 9p -o trans=virtio shared /shared -oversion=9p2000.L  && dd if=/mpktracer_out/traces of=/shared/trace.bin bs=1M && cat /proc/uptime  && echo 'Finished tracing'"
+trace_cmd_suffix: "mkdir mpktracer_out && echo \"time before tracing: $(cat /proc/uptime)\" && XDG_RUNTIME_DIR=/mpktracer_out MPKTRACER_OUT=/mpktracer_out /lib/ld-linux-x86-64.so.2 --library-path /lib ./bin/MPKTracerStarter /bin/hello_world.sh && echo \"time after tracing: $(cat /proc/uptime)\"  && mkdir /shared/ && mount -t 9p -o trans=virtio shared /shared -oversion=9p2000.L  && dd if=/mpktracer_out/traces of=/shared/trace.bin bs=1M && echo \"time done: $(cat /proc/uptime)\" && echo 'Finished tracing'"
 
 #trace_cmd_suffix: "whereis ld-linux"
 checkpoint_range: [1, 3]
