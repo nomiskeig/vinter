@@ -424,6 +424,15 @@ impl HeuristicCrashImageGenerator {
                 ),
             ])
             .args(["-device", "virtio-pmem-pci,memdev=mem1,id=nv1"])
+            .args(["-device", "ivshmem-plain,memdev=hostmem"])
+            .args([
+                "-object",
+                &format!(
+                    "memory-backend-file,id=hostmem,share,mem-path={},size=64M",
+                    self.output_dir.join("trace.bin").display()
+                    //"/dev/shm/ivshmem"
+                ),
+            ])
             .stderr(self.log.try_clone()?)
             .stdout(self.log.try_clone()?)
             .spawn()
