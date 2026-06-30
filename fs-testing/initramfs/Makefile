@@ -35,6 +35,8 @@ initramfs_mpk.cpio.gz: $(INITRAMFS_DEPS) $(MPK_DEPS)
 	./copy_system_bin.sh mount mpk
 	./copy_system_bin.sh touch mpk
 	./copy_system_bin.sh sleep mpk
+	./copy_system_bin.sh mkfs.ext4 mpk
+
 	#./copy-binary.sh /usr/bin/perf mpk
 	# copy over these libs into lib64 because the linker/shell requires them there
 #	cp mpk/lib/libtinfo.so.6 mpk/lib64
