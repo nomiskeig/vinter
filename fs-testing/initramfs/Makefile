@@ -33,6 +33,7 @@ initramfs_mpk.cpio.gz: $(INITRAMFS_DEPS) $(MPK_DEPS)
 	#cp ../../MPKTracer/tests/collector_test/op_codes/test_slowdown_loops/test_module.ko mpk/bin
 	./copy_system_bin.sh sh mpk
 	./copy_system_bin.sh mount mpk
+	./copy_system_bin.sh umount mpk
 	./copy_system_bin.sh touch mpk
 	./copy_system_bin.sh sleep mpk
 	./copy_system_bin.sh mkfs.ext4 mpk

@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::fmt::Error;
+use std::fs::canonicalize;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
@@ -407,7 +408,7 @@ impl HeuristicCrashImageGenerator {
             //  .args(["-drive", "if=virtio,format=qcow2,file=/var/tmp/vinter.qcow2"])
             //.args(["-m", &format!("{},maxmem=4G",&self.vm_config.vm.mem)])
             //.args(["-s", "-S"])
-            .args(["-m", "20G,maxmem=24G,slots=1"])
+            .args(["-m", "20G,maxmem=26G,slots=5"])
             .args(["-enable-kvm"])
             //.args(["-icount", "shift=0"])
             .args(&self.vm_config.vm.qemu_args)
@@ -416,21 +417,21 @@ impl HeuristicCrashImageGenerator {
                 "-serial",
                 &format!("pipe:{}/guest", self.output_dir.display()),
             ])
+            //.args(["-numa", "node,nodeid=1"])
             .args([
                 "-object",
                 &format!(
-                    "memory-backend-file,id=mem1,share,mem-path={},size=5M",
+                    "memory-backend-file,id=mem1,share,mem-path={},size=128M",
                     self.output_dir.join("final.img").display()
                 ),
             ])
             .args(["-device", "virtio-pmem-pci,memdev=mem1,id=nv1"])
-            .args(["-device", "ivshmem-plain,memdev=hostmem"])
+            .args(["-device", "virtio-pmem-pci,memdev=hostmem,id=nv2"])
             .args([
                 "-object",
                 &format!(
-                    "memory-backend-file,id=hostmem,share,mem-path={},size=64M",
-                    self.output_dir.join("trace.bin").display()
-                    //"/dev/shm/ivshmem"
+                    "memory-backend-file,id=hostmem,share,mem-path={},size=128M",
+                    self.output_dir.join("trace_fs_file.bin").display() //"/dev/shm/ivshmem"
                 ),
             ])
             .stderr(self.log.try_clone()?)
@@ -647,6 +648,59 @@ impl HeuristicCrashImageGenerator {
             originating_images: Vec::new(),
         })
     }
+    fn copy_over_trace_file(&self) {
+        println!(
+            "copying over trace file, output dir is {}",
+            self.output_dir.display()
+        );
+        // create mountpoint dir
+        //
+        let full_path = canonicalize(self.output_dir.clone()).expect("make path absolute");
+        Command::new("mkdir")
+            .arg(format!("{}/trace_fs", full_path.display()))
+            .status()
+            .expect("created mountpoint dir");
+        // first, mount the file
+        //
+        println!("made dir");
+        Command::new("sudo")
+            .arg("mount")
+            .arg("-o")
+            .arg("loop")
+            .arg(format!("{}/trace_fs_file.bin", full_path.display()))
+            .arg(format!("{}/trace_fs", full_path.display()))
+            .status()
+            .expect("mount the trace dir");
+
+        println!("mounted");
+        // fix permissions
+        Command::new("sudo")
+            .arg("chmod")
+            .arg("-R")
+            .arg("777")
+            .arg(format!("{}/trace_fs", full_path.display()))
+            .status()
+            .expect("fix permissions");
+        // then, copy it over
+        Command::new("ls")
+            .arg(format!("{}/trace_fs/", full_path.display()))
+            .status()
+            .expect("copied over trace file");
+        Command::new("cp")
+            .arg(format!("{}/trace_fs/traces", full_path.display()))
+            .arg(format!("{}/trace.bin", full_path.display()))
+            .status()
+            .expect("copied over trace file");
+        println!("copied file");
+        // unmount the file
+        Command::new("sudo")
+            .arg("umount")
+            .arg(format!("{}/trace_fs", full_path.display()))
+            .status()
+            .expect("unmounted the trace file");
+
+        println!("unmounted")
+    }
 
     fn insert_crash_image(
         &mut self,
@@ -716,6 +770,7 @@ impl HeuristicCrashImageGenerator {
                 let trace_path = self
                     .trace_recovery(&hash)
                     .context("recovery trace failed")?;
+
                 let trace_file =
                     File::open(trace_path).context("could not open recovery trace file")?;
                 for entry in trace::parse_trace_file_bin_panda(BufReader::new(trace_file)) {
@@ -900,6 +955,11 @@ impl HeuristicCrashImageGenerator {
 
         // grab a reference to the memory so that we can access it while processing the trace
         let replayer_mem = replayer.mem.clone();
+
+        #[cfg(feature = "tracer_mpk")]
+        {
+            self.copy_over_trace_file()
+        }
         let trace_file = File::open(self.trace_path()).context("could not open trace file")?;
         for entry in replayer.process_trace(BufReader::new(trace_file)) {
             match entry? {
