@@ -408,7 +408,7 @@ impl HeuristicCrashImageGenerator {
             //  .args(["-drive", "if=virtio,format=qcow2,file=/var/tmp/vinter.qcow2"])
             //.args(["-m", &format!("{},maxmem=4G",&self.vm_config.vm.mem)])
             //.args(["-s", "-S"])
-            .args(["-m", "20G,maxmem=26G,slots=5"])
+            .args(["-m", "20G,maxmem=32G,slots=5"])
             .args(["-enable-kvm"])
             //.args(["-icount", "shift=0"])
             .args(&self.vm_config.vm.qemu_args)
@@ -421,7 +421,7 @@ impl HeuristicCrashImageGenerator {
             .args([
                 "-object",
                 &format!(
-                    "memory-backend-file,id=mem1,share,mem-path={},size=128M",
+                    "memory-backend-file,id=mem1,share,mem-path={},size=1G",
                     self.output_dir.join("final.img").display()
                 ),
             ])
@@ -430,7 +430,7 @@ impl HeuristicCrashImageGenerator {
             .args([
                 "-object",
                 &format!(
-                    "memory-backend-file,id=hostmem,share,mem-path={},size=128M",
+                    "memory-backend-file,id=hostmem,share,mem-path={},size=10G",
                     self.output_dir.join("trace_fs_file.bin").display() //"/dev/shm/ivshmem"
                 ),
             ])
