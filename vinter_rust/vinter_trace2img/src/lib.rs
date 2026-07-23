@@ -391,9 +391,24 @@ impl HeuristicCrashImageGenerator {
 
         //Command::new("rm /var/tmp/vinter.qcow2").status();
         //Command::new("qemu-img create -f qcow2 /var/tmp/vinter.qcow2").status()?;
+
+        let full_path = canonicalize(self.output_dir.clone()).expect("make path absolute");
+
+        Command::new("truncate")
+            .arg("-s")
+            .arg("10G")
+            .arg(format!("{}/trace_fs_file.bin", full_path.display()))
+            .status()
+            .expect("created trace_fs_file.bin");
+
+        Command::new("mkfs.ext4")
+            .arg("-F")
+            .arg(format!("{}/trace_fs_file.bin", full_path.display()))
+            .status()
+            .expect("Formatted trace_fs_file.bin to ext4");
+
         let mut start = Instant::now();
         let mut start2 = Instant::now();
-
         let vm = Command::new("qemu-system-x86_64")
             .args(["-display", "none"])
             .args(["-kernel", &self.vm_config.vm.kernel])
@@ -474,7 +489,7 @@ impl HeuristicCrashImageGenerator {
             if let Err(e) = writeln!(out_file3, "{}", line) {
                 eprintln!("Couldn't write to file: {}", e);
             }
-            println!("{}", line);
+            //println!("{}", line);
             if line.starts_with("BUG") {
                 return Err(anyhow!("Bug occured in vm"));
                 break;
